@@ -18,13 +18,13 @@ Get the [installer or portable version from Releases](https://github.com/lucasma
 
 Requires Windows 10/11 x64 and .NET Framework 4.8 or later. Executables do not yet have an Authenticode publisher signature.
 
-## What's new in 1.5.0
+## What's new in 1.5.1
 
 - **English and Portuguese:** choose the language in settings or the installer. It applies and saves immediately without discarding pending edits. On first use, Portuguese Windows locales select Portuguese; other locales select English.
 - **Ctrl+Alt+F11:** turn off displays after two seconds, even when slideshow mode is selected or automation is paused. The tray menu offers the same action. **Ctrl+Alt+F12** still toggles automation and cancels a pending manual countdown.
 - **Wake recovery:** monitor state notifications trigger a new power-off request when a display wakes without input. A three-second input grace period and retry delays of 5, 15, 30 and then 60 seconds avoid rapid command loops. Confirmed display-off stops retries.
 - **Error handling:** recoverable UI errors pause automation while keeping the tray app available. Errors are logged before cleanup, and a small local event log records starts, shutdowns and monitor state changes.
-- The exact cause of a reported disappearing tray icon has not been confirmed. See the [investigation, validation and limits](docs/VALIDACAO-1.5.0.md).
+- The exact cause of a reported disappearing tray icon has not been confirmed. See the [investigation, validation and limits](docs/VALIDACAO-1.5.1.md).
 
 ## Features and usage
 
@@ -37,13 +37,13 @@ Requires Windows 10/11 x64 and .NET Framework 4.8 or later. Executables do not y
 
 Double-click the tray icon to open settings; right-click for actions or Exit. Closing settings keeps the app running. Input after activation restores normal monitoring. The manual shortcut does not change your saved mode or automation preference.
 
-Turning off displays does not shut down the computer. Screen Care releases its own stay-awake request after monitor-off and respects security policies, manual suspension and critical battery behavior. A slideshow changes visible content but does not provide the same reduction in panel use as turning displays off.
+Turning off displays does not shut down the computer. Manual monitor-off (Ctrl+Alt+F11 or its menu action) keeps only the computer awake so background playback can continue, until input or cancellation. Automatic monitor-off releases the app's stay-awake request. Security policies, manual suspension and critical battery behavior still take priority. A slideshow changes visible content but does not provide the same reduction in panel use as turning displays off.
 
 ## Privacy and diagnostics
 
 No telemetry, HTTP client, server or internet connection is used by the application. Photos remain in your selected folders. Input is detected in memory without recording keys, typed text or cursor positions. User-selected network folders are accessed through Windows and may cause operating-system network authentication.
 
-Settings stay under `%LOCALAPPDATA%\MonitorPausa`; the legacy directory name preserves upgrades from MonitorPausa. `diagnostics.log` contains timestamps and fixed event codes, is limited to approximately 64 KB and is never uploaded. `last-error.txt` may contain local paths from exceptions: review it before sharing. See [privacy details](docs/PRIVACIDADE.md).
+Settings stay under `%LOCALAPPDATA%\MonitorPausa`; the legacy directory name preserves upgrades from MonitorPausa. `diagnostics.log` contains timestamps and fixed event codes, including the input category that ended an active action and changes to the app's power requests. It is limited to approximately 64 KB and is never uploaded. Individual keys, pointer coordinates and device identifiers are not logged. `last-error.txt` may contain local paths from exceptions: review it before sharing. See [privacy details](docs/PRIVACIDADE.md).
 
 ## Build and test
 
@@ -70,7 +70,7 @@ Before publishing, run `node tools/check-privacy.cjs` and review the diff. After
 - `src/TrayApplication.cs`: tray app lifecycle and orchestration.
 - `setup/Setup.cs`, `tests/Tests.cs`: installer and regression tests.
 
-Additional documentation: [architecture](docs/ARQUITETURA.md), [controller support](docs/CONTROLES.md), [contributing](CONTRIBUTING.md), [security reporting](SECURITY.md) and [1.5.0 validation](docs/VALIDACAO-1.5.0.md).
+Additional documentation: [architecture](docs/ARQUITETURA.md), [controller support](docs/CONTROLES.md), [contributing](CONTRIBUTING.md), [security reporting](SECURITY.md) and [1.5.1 validation](docs/VALIDACAO-1.5.1.md).
 
 ## License
 

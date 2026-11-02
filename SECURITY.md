@@ -4,4 +4,4 @@ Não inclua credenciais nem dados de usuários em issues ou pull requests. Repro
 
 O canal privado de vulnerabilidades está ativado. Use [Report a vulnerability](https://github.com/lucasmas16/screen-care/security/advisories/new), na aba Security do repositório. Não publique detalhes exploráveis em issues públicas enquanto o relato estiver em análise. Esta organização de arquivos não substitui uma auditoria de segurança do aplicativo.
 
-A versão atual é a 1.5.0. Consulte a [validação atual](docs/VALIDACAO-1.5.0.md) e a [revisão de segurança da base 1.4.1](docs/REVISAO-SEGURANCA-1.4.1.md). Relatos devem incluir versão do Windows e do aplicativo, passos mínimos e arquivos sintéticos, sem preferências, fotos ou logs pessoais completos.
+A versão atual é a 1.5.1. Consulte a [validação atual](docs/VALIDACAO-1.5.1.md) e a [revisão de segurança da base 1.4.1](docs/REVISAO-SEGURANCA-1.4.1.md). Relatos devem incluir versão do Windows e do aplicativo, passos mínimos e arquivos sintéticos, sem preferências, fotos ou logs pessoais completos.

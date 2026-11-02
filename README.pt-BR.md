@@ -12,20 +12,22 @@ Projeto de código aberto para Windows, distribuído sob a licença MIT.
 
 Baixe o [instalador ou a versão portátil na página de releases](https://github.com/lucasmas16/screen-care/releases/latest). Os pacotes incluem a licença e o manual; a lista `SHA256SUMS.txt` permite conferir a integridade dos arquivos. O aplicativo ainda não possui assinatura digital de editor.
 
-## Novidades da versão 1.5.0
+## Novidades da versão 1.5.1
+
+O desligamento manual por Ctrl+Alt+F11 mantém somente o computador acordado para permitir reprodução em segundo plano, até uma entrada ou cancelamento. O desligamento automático libera o pedido de manter o sistema acordado. Suspensão manual e ações críticas do Windows continuam tendo prioridade.
 
 - Interface, instalador, menu e avisos em inglês e português. O seletor de idioma aplica e salva a escolha imediatamente, preservando opções em edição. O primeiro uso acompanha o idioma do Windows: português em sistemas lusófonos, inglês nos demais.
 - **Ctrl+Alt+F11** desliga as telas após dois segundos, inclusive com o slideshow selecionado ou a automação pausada. A ação também está no menu do ícone. Ctrl+Alt+F12 continua ativando/pausando a automação e cancela uma contagem manual pendente.
 - Recuperação do desligamento após reacendimento sem atividade: espera de três segundos para processar entrada pendente e tentativas com intervalos de 5, 15, 30 e até 60 segundos. A confirmação de tela desligada interrompe as tentativas.
 - Erros recuperáveis da interface pausam a automação e mantêm o ícone disponível. Falhas são registradas antes da limpeza de recursos; eventos locais de execução ajudam a investigar saídas inesperadas.
-- A causa exata do desaparecimento de ícone relatado não foi confirmada. Consulte a [investigação e validação](docs/VALIDACAO-1.5.0.md).
+- A causa exata do desaparecimento de ícone relatado não foi confirmada. Consulte a [investigação e validação](docs/VALIDACAO-1.5.1.md).
 
 ## Histórico da versão 1.4.1
 
 - Novo nome: **Screen Care**, com executáveis e atalhos atualizados. As configurações e a identidade interna da instalação anterior são mantidas para permitir atualização.
 - Proteção adicional para carregamento de DLLs do Windows, destinos do instalador e configurações XML inválidas.
 
-- Corrigido o ciclo de desligar/reacender causado por mudanças de conexão das telas durante o descanso. A versão 1.5.0 também acompanha o estado das telas e repete o pedido quando necessário, com intervalos progressivos.
+- Corrigido o ciclo de desligar/reacender causado por mudanças de conexão das telas durante o descanso. A versão 1.5.1 também acompanha o estado das telas e repete o pedido quando necessário, com intervalos progressivos.
 - Atividade do DualSense (Bluetooth simples/aprimorado e USB), controles XInput e joysticks WinMM reinicia a contagem, incluindo comandos mantidos pressionados e filtro para pequenas oscilações dos analógicos.
 - Alerta visual no centro inferior do monitor principal, com desenho de monitor e símbolos de ativado/pausado. Novos alertas substituem imediatamente o anterior e reiniciam sua duração, sem roubar foco.
 
@@ -71,7 +73,7 @@ Depois de compilar com testes: `powershell -ExecutionPolicy Bypass -File .\tools
 
 Detalhes: [arquitetura](docs/ARQUITETURA.md), [decisão inicial](docs/decisions/0001-organizacao.md), [privacidade](docs/PRIVACIDADE.md) e [contribuição](CONTRIBUTING.md).
 
-Resultado e limites: [validação da versão 1.5.0](docs/VALIDACAO-1.5.0.md) e [revisão de segurança anterior](docs/REVISAO-SEGURANCA-1.4.1.md).
+Resultado e limites: [validação da versão 1.5.1](docs/VALIDACAO-1.5.1.md) e [revisão de segurança anterior](docs/REVISAO-SEGURANCA-1.4.1.md).
 
 ## Limitações
 

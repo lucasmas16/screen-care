@@ -1,4 +1,4 @@
-SCREEN CARE 1.5.0 — Windows 10/11, x64
+SCREEN CARE 1.5.1 — Windows 10/11, x64
 
 ENGLISH — Portuguese instructions follow below.
 
@@ -42,7 +42,9 @@ After display-off, input returns to normal monitoring. Without input, an unexpec
 another monitor-off request after at least three seconds. Missing acknowledgement or persistent conflicts
 use delays of 5, 15, 30 and then 60 seconds. Confirmed display-off stops retrying; input cancels retries.
 Screen Care does not shut down the PC. It holds its own display/system stay-awake request during the
-configured wait and slideshow, then releases it after monitor-off, pause, exit or suspension.
+configured wait and slideshow. Automatic monitor-off releases this request. Manual monitor-off
+(Ctrl+Alt+F11 or its menu action) keeps only the computer awake for background playback until input
+or cancellation. Pause, exit and suspension release the request.
 Windows security policies, manual suspension and critical battery actions take priority.
 Monitor topology changes caused by standby do not reassert the app's stay-awake request.
 
@@ -82,7 +84,7 @@ MIT. See LICENSE. The portable package and installer both include the license.
 
 --------------------------------------------------------------------------
 
-SCREEN CARE 1.5.0 — Windows 10/11, x64
+SCREEN CARE 1.5.1 — Windows 10/11, x64
 
 PORTUGUÊS (BRASIL)
 
@@ -131,7 +133,9 @@ O comportamento físico depende dos monitores, drivers e sessão; valide no seu 
 
 Com a automação habilitada, o Screen Care mantém tela e sistema acordados durante a espera e o
 slideshow, para que o plano de energia não encerre a contagem antes do tempo escolhido.
-Depois de desligar os monitores, ao pausar, sair, desconectar ou suspender, essa solicitação é liberada.
+Após o desligamento automático, essa solicitação é liberada. No desligamento manual por Ctrl+Alt+F11
+ou seu item no menu, somente o computador permanece acordado, permitindo reprodução em segundo
+plano até uma entrada ou cancelamento. Pausar, sair, desconectar ou suspender libera a solicitação.
 As políticas de segurança, suspensão manual, bateria crítica e bloqueio do Windows têm prioridade.
 COM O WINDOWS BLOQUEADO
 Em qualquer um dos modos, o aplicativo desliga os monitores depois da espera escolhida.

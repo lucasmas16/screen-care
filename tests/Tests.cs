@@ -63,9 +63,11 @@ namespace ScreenCare
             { Application.Run(new SettingsForm(new Settings { Enabled = false, Action = IdleAction.Slideshow })); return 0; }
             string root = Path.GetFullPath(args.Length > 0 ? args[0] : "test-results");
             Directory.CreateDirectory(root);
+            Diagnostics.DirectoryPath = Path.Combine(root, "synthetic-diagnostics");
+            L10n.Current = Language.Portuguese;
             try
             {
-                TestIdle(); TestGamepads(); TestSession(); TestPaint(); TestMouse(); TestSettings(root); TestSetupFiles(root); TestImages(root); TestWindows(root); TestToasts(root);
+                TestIdle(); TestPowerGuard(); TestGamepads(); TestSession(); TestPaint(); TestMouse(); TestSettings(root); TestSetupFiles(root); TestImages(root); TestWindows(root); TestToasts(root); TestLocalization(root); TestLifetime(root);
                 results.Add(passed + " checks passed.");
                 File.WriteAllLines(Path.Combine(root, "results.txt"), results);
                 Console.WriteLine(String.Join(Environment.NewLine, results));
@@ -103,6 +105,37 @@ namespace ScreenCare
             idle.Input(961);
             Check(!idle.TryActivate(970, 10, true, false) && idle.TryActivate(971, 10, true, false), "real activity rearms a complete interval after display sleep");
             Check(idle.DisplayLayoutChanged(972, false) && !idle.Active, "slideshow layout changes still reset windows");
+        }
+        private static void TestPowerGuard()
+        {
+            var guard = new MonitorPowerGuard();
+            Check(!guard.TryRetry(100, true), "inactive monitor guard never sends power commands");
+            guard.Begin(10);
+            Check(!guard.TryRetry(14.99, true) && guard.TryRetry(15, true), "missing power acknowledgement retries after five seconds");
+            Check(!guard.TryRetry(29.99, true) && guard.TryRetry(30, true), "second retry waits fifteen seconds");
+            Check(!guard.TryRetry(59.99, true) && guard.TryRetry(60, true), "third retry waits thirty seconds");
+            Check(!guard.TryRetry(119.99, true) && guard.TryRetry(120, true), "persistent conflicts back off to sixty seconds");
+            guard.Observe(false, 121);
+            Check(!guard.TryRetry(10000, true), "confirmed display-off stops all retries");
+            guard.Observe(true, 10001); guard.Observe(true, 10002);
+            Check(!guard.TryRetry(10003.99, true) && guard.TryRetry(10004, true), "unexpected wake retries after input grace period without duplicate-notification postponement");
+            guard.Reset();
+            Check(!guard.TryRetry(20000, true), "user input cancels queued retry");
+            guard.Begin(0); guard.Observe(true, 1);
+            Check(!guard.TryRetry(100, false), "settings, suspended, disconnected and secure sessions cannot retry");
+            guard.Reset(); guard.Observe(true, 101);
+            Check(!guard.TryRetry(200, true), "late display notification cannot rearm canceled guard");
+            guard.Begin(300); guard.Observe(false, 301); guard.Observe(true, 302); guard.Reset();
+            Check(!guard.TryRetry(400, true), "input queued after wake prevents immediate reblanking");
+            var manual = new DelayedAction();
+            manual.Schedule(10, true);
+            Check(manual.Pending && !manual.TryTake(11.999), "F11 waits the full two seconds");
+            Check(manual.TryTake(12) && manual.MonitorsOnly && !manual.Pending, "F11 explicitly selects monitors-off regardless of slideshow setting");
+            Check(!manual.TryTake(14), "manual action fires once");
+            manual.Schedule(20, true); manual.Schedule(21, true);
+            Check(!manual.TryTake(22) && manual.TryTake(23), "second shortcut invocation restarts countdown");
+            manual.Schedule(30, false); manual.Cancel();
+            Check(!manual.TryTake(32), "pausing or session change cancels manual countdown");
         }
         private static void TestGamepads()
         {
@@ -349,9 +382,10 @@ namespace ScreenCare
         }
         private static void TestWindows(string root)
         {
+            L10n.Current = Language.Portuguese;
             Check(TrayApplication.StatusNotification(true) == "Monitoramento automático ativado.", "global shortcut reports enabled state");
             Check(TrayApplication.StatusNotification(false) == "Monitoramento automático desativado.", "global shortcut reports disabled state");
-            using (var form = new SettingsForm(new Settings { Action = IdleAction.Slideshow, ImageFolder = @"C:\Imagens\Natureza" }))
+            using (var form = new SettingsForm(new Settings { Language = Language.Portuguese, Action = IdleAction.Slideshow, ImageFolder = @"C:\Imagens\Natureza" }))
             {
                 Render(form, Path.Combine(root, "settings-preview.png"));
                 Render(form, Path.Combine(root, "settings-dark.png"));
@@ -397,17 +431,26 @@ namespace ScreenCare
                 form.SetEnabled(false);
                 Check(!form.ReadDraft().Enabled, "external automation toggle stays synchronized with open settings");
             }
-            using (var setup = new SetupForm()) { Render(setup, Path.Combine(root, "setup-preview.png")); Check(setup.Controls.Count == 5, "installer UI renders"); }
+            using (var setup = new SetupForm()) { Render(setup, Path.Combine(root, "setup-preview.png")); Check(setup.Controls.Count == 7, "installer UI and language picker render"); }
             bool firstHotKeyRegistered;
             using (var input = new InputWindow())
             {
                 bool toggled = false; input.ToggleRequested += delegate { toggled = true; };
-                Check(Native.PostMessage(input.Handle, Native.WM_HOTKEY, new IntPtr(InputWindow.ToggleHotKeyId + 1), IntPtr.Zero), "unrelated hotkey message can be queued");
+                Check(Native.PostMessage(input.Handle, Native.WM_HOTKEY, new IntPtr(InputWindow.ToggleHotKeyId + 2), IntPtr.Zero), "unrelated hotkey message can be queued");
                 Application.DoEvents();
                 Check(!toggled, "unrelated hotkey id is ignored");
                 Check(Native.PostMessage(input.Handle, Native.WM_HOTKEY, new IntPtr(InputWindow.ToggleHotKeyId), IntPtr.Zero), "global shortcut message can be queued");
                 Application.DoEvents();
                 Check(toggled, "global shortcut message requests automation toggle");
+                bool offRequested = false; input.MonitorOffRequested += delegate { offRequested = true; };
+                Native.PostMessage(input.Handle, Native.WM_HOTKEY, new IntPtr(InputWindow.MonitorOffHotKeyId), IntPtr.Zero); Application.DoEvents();
+                Check(offRequested, "F11 native hotkey message requests delayed display-off");
+                if (input.MonitorOffHotKeyRegistered)
+                {
+                    using (var collision = new InputWindow())
+                        Check(!collision.MonitorOffHotKeyRegistered && collision.MonitorOffHotKeyRegistrationError == Native.ErrorHotKeyAlreadyRegistered, "F11 collision is nonfatal and reported independently");
+                }
+                else Check(input.MonitorOffHotKeyRegistrationError == Native.ErrorHotKeyAlreadyRegistered, "F11 registration only unavailable because another app owns it");
                 firstHotKeyRegistered = input.HotKeyRegistered;
                 if (firstHotKeyRegistered)
                 {
@@ -432,6 +475,95 @@ namespace ScreenCare
                 using (var replacement = new InputWindow())
                     Check(replacement.HotKeyRegistered, "global shortcut registers again after owner disposal");
             using (var icon = Theme.MakeIcon()) Check(icon.Width == 32, "tray icon resource lifecycle");
+        }
+        private static void TestLocalization(string root)
+        {
+            Check(L10n.Detect(new System.Globalization.CultureInfo("pt-BR")) == Language.Portuguese && L10n.Detect(new System.Globalization.CultureInfo("pt-PT")) == Language.Portuguese, "Portuguese Windows locales select Portuguese");
+            Check(L10n.Detect(new System.Globalization.CultureInfo("en-US")) == Language.English && L10n.Detect(new System.Globalization.CultureInfo("de-DE")) == Language.English, "other Windows locales default to English");
+            Check(L10n.Duration(1, 0, Language.English) == "1 second" && L10n.Duration(2, 0, Language.Portuguese) == "2 segundos", "duration grammar follows selected language");
+            string path = Path.Combine(root, "language-only.xml"), warning;
+            var persisted = new Settings { Language = Language.Portuguese, Enabled = false, IdleSeconds = 300, ImageFolder = "Cancelar", Appearance = Appearance.Dark };
+            using (var form = new SettingsForm(persisted))
+            {
+                var wait = Find<NumberField>(form, "Tempo de espera"); wait.ValueText = "abc";
+                int requests = 0;
+                form.LanguageRequested += delegate(Language language) { requests++; var next = persisted.Copy(); next.Language = language; SettingsStore.Save(next, path); persisted = next; };
+                var picker = Find<ComboBox>(form, "Idioma"); picker.SelectedIndex = 0;
+                Check(requests == 1 && form.CurrentLanguage == Language.English && wait.ValueText == "abc", "language changes immediately without parsing or discarding invalid draft input");
+                Check(picker.AccessibleName == "Language" && Find<NumberField>(form, "Idle timeout") == wait, "language picker and accessibility labels translate");
+                Check(Find<SoftButton>(wait, "Decrease: Idle timeout") != null, "numeric control accessibility translates fully");
+                Check(Find<TextBox>(form, "Image folder").Text == "Cancelar", "user-entered folder names are never translated");
+                var saved = SettingsStore.Load(path, out warning);
+                Check(warning == null && saved.Language == Language.English && saved.IdleSeconds == 300 && saved.ImageFolder == "Cancelar" && !saved.Enabled, "language-only save preserves other settings");
+                wait.Value = 17; Check(form.ReadDraft().IdleSeconds == 1020 && form.ReadDraft().Language == Language.English, "saving draft retains language and edits");
+                Render(form, Path.Combine(root, "settings-en-dark.png"));
+                Find<ModeTile>(form, "Slideshow mode").Checked = true;
+                form.ChangeTheme(Appearance.Light); Render(form, Path.Combine(root, "settings-en-light.png"));
+                picker.SelectedIndex = 1;
+                Check(requests == 2 && Find<NumberField>(form, "Tempo de espera") == wait && form.ReadDraft().IdleSeconds == 1020, "switching back restores Portuguese without losing state");
+                Render(form, Path.Combine(root, "settings-pt-light.png"));
+                form.ChangeTheme(Appearance.Dark); Render(form, Path.Combine(root, "settings-pt-dark.png"));
+            }
+            File.WriteAllText(path, File.ReadAllText(path).Replace("<Language>Portuguese</Language>", ""));
+            var legacy = SettingsStore.Load(path, out warning);
+            Check(warning == null && legacy.Language == L10n.Detect(System.Globalization.CultureInfo.CurrentUICulture) && legacy.ImageFolder == "Cancelar" && !legacy.Enabled, "pre-language settings migrate without changing preferences");
+            legacy.Language = (Language)999; legacy.Normalize();
+            Check(legacy.Language == L10n.Detect(System.Globalization.CultureInfo.CurrentUICulture), "invalid language normalizes safely");
+            L10n.Current = Language.English;
+            Check(TrayApplication.StatusNotification(true) == "Automatic monitoring enabled.", "English toggle notification");
+            using (var setup = new SetupForm())
+            {
+                Check(setup.Text == "Install Screen Care", "installer opens in selected language");
+                Render(setup, Path.Combine(root, "setup-en.png"));
+                Find<ComboBox>(setup, "Language").SelectedIndex = 1;
+                Check(setup.Text == "Instalar Screen Care", "installer changes language before install");
+            }
+        }
+        private static void TestLifetime(string root)
+        {
+            using (var app = new TrayApplication(new Settings { Enabled = false, Language = Language.English }, false))
+            {
+                var type = typeof(TrayApplication);
+                var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                var open = type.GetMethod("OpenSettings", flags);
+                for (int i = 0; i < 3; i++)
+                {
+                    open.Invoke(app, null);
+                    var form = (Form)type.GetField("form", flags).GetValue(app);
+                    form.Close(); Application.DoEvents();
+                    Check(type.GetField("form", flags).GetValue(app) == null && !(bool)type.GetField("exiting", flags).GetValue(app), "closing settings keeps tray application alive " + i);
+                }
+                var tray = (NotifyIcon)type.GetField("tray", flags).GetValue(app);
+                Check(tray.Visible && tray.ContextMenuStrip.Items[3].Text == "Settings…", "English tray remains visible after settings closure");
+                Check(app.TryRecover(new IOException("synthetic failure")), "recoverable UI error pauses automation instead of exiting");
+                Check(tray.Visible && !((System.Windows.Forms.Timer)type.GetField("timer", flags).GetValue(app)).Enabled, "recovery keeps tray visible and stops failing timer");
+                Check(!app.TryRecover(new IOException("repeated synthetic failure")), "repeated error is not swallowed in a retry loop");
+                Check(!app.TryRecover(new OutOfMemoryException()), "fatal resource errors are not treated as recoverable");
+                app.Shutdown(); app.Shutdown();
+                Check(!tray.Visible, "repeated shutdown safely disposes the tray");
+            }
+            using (var app = new TrayApplication(new Settings { Enabled = false, Action = IdleAction.Slideshow }, false))
+            {
+                var flags = BindingFlags.Instance | BindingFlags.NonPublic; var type = typeof(TrayApplication);
+                var input = (InputWindow)type.GetField("input", flags).GetValue(app);
+                // Exercise the real timer path but block its queued native power command.
+                input.AllowMonitorOff = delegate { return false; };
+                var manual = (DelayedAction)type.GetField("manual", flags).GetValue(app);
+                manual.Schedule(-3, true); type.GetMethod("Tick", flags).Invoke(app, null); Application.DoEvents();
+                Check((IdleAction)type.GetProperty("EffectiveAction", flags).GetValue(app, null) == IdleAction.MonitorsOff, "manual F11 action overrides slideshow even with automation paused");
+                var settings = (Settings)type.GetField("settings", flags).GetValue(app);
+                Check(!settings.Enabled && settings.Action == IdleAction.Slideshow, "manual monitor-off preserves configured mode and automation preference");
+                type.GetMethod("OnInput", flags).Invoke(app, null);
+                Check((IdleAction)type.GetProperty("EffectiveAction", flags).GetValue(app, null) == IdleAction.Slideshow, "user activity restores configured mode after manual power-off");
+                Check(!((MonitorPowerGuard)type.GetField("powerGuard", flags).GetValue(app)).Armed, "user activity cancels monitor guard in running app");
+            }
+            Diagnostics.Error(new InvalidOperationException("synthetic diagnostic"));
+            string error = File.ReadAllText(Path.Combine(Diagnostics.DirectoryPath, "last-error.txt"));
+            Check(error.Contains("synthetic diagnostic"), "failure is recorded independently of shutdown");
+            string log = Path.Combine(Diagnostics.DirectoryPath, "diagnostics.log");
+            File.WriteAllText(log, new String('x', 66000)); Diagnostics.Event("rotation-test");
+            Check(new FileInfo(log).Length < 200 && File.ReadAllText(log).Contains("rotation-test"), "local diagnostic log is bounded");
+            L10n.Current = Language.Portuguese;
         }
         private static void Render(Form form, string path)
         {

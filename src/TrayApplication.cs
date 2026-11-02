@@ -76,9 +76,11 @@ namespace ScreenCare
         }
 
         private void OnInput()
+        { OnInputFrom(input.LastInputSource ?? "direct"); }
+        private void OnInputFrom(string source)
         {
             if (exiting) return;
-            if (idle.Input(Now)) { Diagnostics.Event("idle-ended-by-input"); StopSlides(); }
+            if (idle.Input(Now)) { Diagnostics.Event("idle-ended-by-" + source); StopSlides(); }
             powerGuard.Reset(); forceMonitorsOff = false;
             UpdatePower();
         }
@@ -93,11 +95,11 @@ namespace ScreenCare
         private void Tick()
         {
             if (exiting) return;
-            if (!session.Locked && !session.Suspended && !session.Disconnected && gamepads.Poll(Now)) OnInput();
+            if (!session.Locked && !session.Suspended && !session.Disconnected && gamepads.Poll(Now)) OnInputFrom("gamepad");
             if (session.Locked)
             {
                 uint time;
-                if (Native.TryLastInput(out time) && session.ObserveInput(time)) OnInput();
+                if (Native.TryLastInput(out time) && session.ObserveInput(time)) OnInputFrom("locked-session-input");
             }
             if (!session.Allows(settings.Action, Native.InteractiveDesktop(), false))
             {
@@ -135,15 +137,21 @@ namespace ScreenCare
         private void StopSlides() { if (slides != null) { slides.Dispose(); slides = null; } }
         private void SetPower(uint flags)
         {
-            if (powerFlags != flags && Native.SetThreadExecutionState(flags) != 0) powerFlags = flags;
+            if (powerFlags != flags && Native.SetThreadExecutionState(flags) != 0)
+            {
+                powerFlags = flags;
+                Diagnostics.Event(flags == 0x80000003 ? "power-keep-display" : flags == 0x80000001 ? "power-keep-system" : "power-released");
+            }
         }
         private void UpdatePower()
         {
             // Own the wait interval while enabled, and keep a visible slideshow on screen.
-            // After monitors-off, restore the Windows power plan (including automatic sleep).
+            // Automatic monitor-off restores the normal sleep policy. Explicit F11
+            // keeps only the system awake until input/cancel, allowing background audio.
             bool hold = !session.Suspended && !session.Disconnected
                 && (settings.Enabled || idle.Active) && !(idle.Active && EffectiveAction == IdleAction.MonitorsOff);
-            SetPower(hold ? 0x80000003 : 0x80000000);
+            bool manualOff = !session.Suspended && !session.Disconnected && idle.Active && forceMonitorsOff;
+            SetPower(hold ? 0x80000003u : manualOff ? 0x80000001u : 0x80000000u);
         }
         private void Toggle(bool notifyStatus)
         {

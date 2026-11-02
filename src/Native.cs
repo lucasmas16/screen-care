@@ -55,6 +55,8 @@ namespace ScreenCare
     internal sealed class InputWindow : Form
     {
         internal event Action DirectInput;
+        // Classification only: never retain key codes, pointer coordinates or device IDs.
+        internal string LastInputSource { get; private set; }
         internal event Action<bool> DisplayChanged;
         internal event Action<int> SessionChanged;
         internal event Action Suspended;
@@ -120,6 +122,12 @@ namespace ScreenCare
             haveAbsolute = true; oldX = x; oldY = y;
             return buttons != 0 || changed;
         }
+        internal static bool KeyboardIsActivity(ushort makeCode, ushort virtualKey)
+        {
+            // RAWKEYBOARD can report an overrun or an unmapped key. Neither is
+            // evidence of a user action. A zero scan code is valid for media keys.
+            return makeCode != 0xFF && virtualKey > 0 && virtualKey < 0xFF;
+        }
         private void ReadInput(IntPtr handle)
         {
             uint size = 0;
@@ -128,7 +136,9 @@ namespace ScreenCare
             uint read = Native.GetRawInputData(handle, 0x10000003, rawBuffer, ref size, headerSize);
             if (read == UInt32.MaxValue || read < headerSize + 8) return;
             int type = Marshal.ReadInt32(rawBuffer);
-            bool activity = type == 1;
+            bool activity = type == 1 && read >= headerSize + 16
+                && KeyboardIsActivity((ushort)Marshal.ReadInt16(rawBuffer, (int)headerSize),
+                    (ushort)Marshal.ReadInt16(rawBuffer, (int)headerSize + 6));
             if (type == 2)
             {
                 IntPtr device = Marshal.ReadIntPtr(rawBuffer, 8);
@@ -158,7 +168,13 @@ namespace ScreenCare
                     Marshal.ReadInt32(rawBuffer, offset + 12), Marshal.ReadInt32(rawBuffer, offset + 16),
                     ref haveAbsoluteMouse, ref absoluteX, ref absoluteY);
             }
-            if (activity && DirectInput != null) DirectInput();
+            if (activity && DirectInput != null)
+            {
+                LastInputSource = type == 1 ? ((Marshal.ReadInt16(rawBuffer, (int)headerSize + 2) & 1) != 0 ? "keyboard-release" : "keyboard-press") : type == 2 ? "dualsense"
+                    : Marshal.ReadInt16(rawBuffer, (int)headerSize + 4) != 0 ? "mouse-button-wheel"
+                    : (Marshal.ReadInt16(rawBuffer, (int)headerSize) & 1) != 0 ? "mouse-absolute" : "mouse-relative";
+                DirectInput();
+            }
         }
         private bool IsDualSense(IntPtr device)
         {

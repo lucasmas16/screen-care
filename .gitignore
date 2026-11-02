@@ -1,0 +1,83 @@
+# Dependências, resultados e ambiente local
+node_modules/
+.pnpm-store/
+.npm/
+dist/
+release/
+artifacts/
+test-output/
+test-results/
+coverage/
+.runtime/
+bin/
+obj/
+.vs/
+.idea/
+.vscode/
+.gradle/
+*.tsbuildinfo
+*.log
+*.tmp
+*.bak
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+desktop.ini
+# Material pessoal e de agentes
+privado/
+private/
+prompts/
+work/
+.claude/
+.agents/
+.codex/
+.env
+.env.*
+!.env.example
+*.local
+*.local.*
+# Dados de usuário, comprovantes, backups e perfis
+*.pdf
+*.xls
+*.xlsx
+*.csv
+*.ofx
+*.bgm
+*.fgn
+*.db
+*.db-*
+*.sqlite*
+*.zip
+*.7z
+*.rar
+*.exe
+*.dll
+*.pdb
+*.lnk
+*.apk
+*.aab
+*.dmg
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+Cookies*
+Login Data*
+Web Data*
+Local State
+Preferences
+profile/
+profiles/
+backups/
+# Android: somente fonte, nunca SDK local/assinatura
+local.properties
+keystore.properties
+google-services.json
+android/build/
+android/app/build/
+android/app/src/main/assets/
+android/capacitor-cordova-android-plugins/
+# build/ na raiz contém scripts e ícones de fonte: manter versionado.

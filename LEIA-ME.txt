@@ -1,0 +1,80 @@
+SCREEN CARE 1.4.1 — Windows 10/11, x64
+
+INSTALAR
+Abra ScreenCare-Setup.exe e clique em Instalar e abrir.
+O aplicativo fica na área de notificação, perto do relógio (talvez dentro da seta ^).
+Clique duas vezes no ícone para configurar; botão direito para pausar, iniciar agora ou sair.
+Use Ctrl+Alt+F12 em qualquer aplicativo para ativar ou desativar o monitoramento. Uma notificação confirma o novo estado.
+O aviso aparece por 3 segundos no centro inferior do monitor principal, sem tirar o foco.
+O monitor com confirmação representa ativado; o monitor com pausa representa desativado.
+Alternar novamente substitui o aviso anterior imediatamente e reinicia os 3 segundos.
+Fechar a janela de configurações mantém o aplicativo em execução. Clique em Salvar para aplicar alterações.
+
+CONFIGURAR
+Use o seletor Light / Dark no canto superior direito para alternar o tema.
+O tema é aplicado e salvo imediatamente, sem aplicar as outras opções ainda em edição.
+O menu do ícone também acompanha o tema. A interface inicia em Dark para configurações antigas.
+Escolha desligar todos os monitores ou slideshow. Defina uma espera entre 10 segundos e 24 horas.
+Para slideshow, escolha uma pasta. A mesma imagem aparece em todas as telas, inteira e sem distorção.
+Intervalo entre imagens: 2 a 3600 segundos. Há opções para subpastas e ordem aleatória.
+Marque Iniciar com o Windows se desejar. As configurações são preservadas entre execuções e atualizações.
+Ao iniciar, bloquear, desbloquear ou voltar de suspensão, a contagem começa de novo.
+Enquanto as configurações estão abertas na sessão desbloqueada, a ação automática fica suspensa.
+
+ATIVIDADE E ENERGIA
+A contagem usa teclado, mouse, touchpad e controles de jogos, independentemente de vídeos, música ou uso de CPU.
+A aplicação não registra teclas, texto digitado ou posições do cursor em arquivos.
+Raw Input evita tratar mensagens comuns de automação como presença. Dispositivos virtuais/USB que
+simulam um mouse físico podem ser indistinguíveis de interação real.
+DualSense e DualSense Edge são lidos diretamente por USB e Bluetooth; controles XInput (inclusive
+Steam Input) e joysticks compatíveis com WinMM também são consultados. Botões, direcionais,
+gatilhos e analógicos fora da zona de repouso contam como atividade, mesmo mantidos pressionados.
+Controle conectado e parado não impede o descanso. Pequenas oscilações dos analógicos são ignoradas.
+Teclado, mouse ou atividade do controle encerram o slideshow e reiniciam a contagem. Esc também encerra a apresentação.
+Desligar monitores não desliga o computador: o Windows pede economia de energia às telas conectadas.
+É enviado um único pedido por período de inatividade. Mudanças de conexão causadas pelo descanso
+das telas não reativam a solicitação de mantê-las acesas. Não há repetição do pedido a cada 5 segundos.
+Se outro programa ou driver reacender as telas, o app não disputa continuamente o estado com ele.
+O comportamento físico depende dos monitores, drivers e sessão; valide no seu equipamento.
+
+Com a automação habilitada, o Screen Care mantém tela e sistema acordados durante a espera e o
+slideshow, para que o plano de energia não encerre a contagem antes do tempo escolhido.
+Depois de desligar os monitores, ao pausar, sair, desconectar ou suspender, essa solicitação é liberada.
+As políticas de segurança, suspensão manual, bateria crítica e bloqueio do Windows têm prioridade.
+COM O WINDOWS BLOQUEADO
+Em qualquer um dos modos, o aplicativo desliga os monitores depois da espera escolhida.
+O slideshow permanece selecionado, mas suas imagens só aparecem com a sessão desbloqueada.
+Ao desbloquear, começa uma nova contagem para a ação escolhida.
+Na tela bloqueada, consulta o horário de entrada da sessão; vídeos e músicas não contam como entrada.
+Essa consulta não distingue perfeitamente entrada física de entrada simulada pelo sistema.
+Entrada de teclado ou mouse na tela bloqueada concede uma nova espera completa para permitir o login.
+O app respeita a pausa da automação e não modifica a senha nem o bloqueio de segurança.
+
+IMAGENS E MEMÓRIA
+JPG/JPEG, PNG, BMP, GIF e TIFF; GIF/TIFF usam somente o primeiro quadro/página. HEIC/WebP não incluídos.
+Limites para manter o uso previsível: 20.000 imagens por pasta/árvore, 64 MB por arquivo, 40 megapixels.
+Pastas vinculadas por junction/symlink não são percorridas recursivamente. Arquivos inválidos são ignorados.
+Só a imagem atual fica em cache, reduzida a no máximo 8,3 megapixels (~32 MB). Durante a troca há
+uso transitório adicional para decodificação. O mesmo bitmap é compartilhado por todos os monitores.
+Sem animações contínuas, navegador embutido, telemetria, serviço ou conexão com a internet.
+O catálogo é atualizado a cada nova apresentação. Para incluir arquivos novos, interrompa e reinicie.
+
+ARQUIVOS E DESINSTALAÇÃO
+O nome anterior, MonitorPausa, permanece nas pastas internas para preservar atualizações e preferências.
+Programa: %LOCALAPPDATA%\Programs\MonitorPausa
+Configurações: %LOCALAPPDATA%\MonitorPausa\settings.xml
+Último erro, se houver: %LOCALAPPDATA%\MonitorPausa\last-error.txt
+Desinstale em Configurações do Windows > Aplicativos > Screen Care, ou pelo menu Iniciar.
+A desinstalação remove programa, atalhos e inicialização automática, preservando configurações e fotos.
+Um pequeno auxiliar de desinstalação fica na pasta temporária até a limpeza de temporários do Windows.
+Instalação e atalhos exigem caminhos sem junctions ou links simbólicos.
+O log do último erro pode conter caminhos locais; revise-o antes de compartilhar.
+
+REQUISITOS
+Windows 10/11 x64, .NET Framework 4.8 ou superior. Normalmente já presente no Windows atualizado.
+Esta compilação é local e não possui assinatura digital de um editor comercial.
+
+VERSÃO PORTÁTIL
+Extraia ScreenCare-Portatil.zip para uma pasta fixa e execute ScreenCare.exe.
+Para iniciar com Windows, mantenha o executável no mesmo local. Ela também salva opções em LocalAppData.
+Use uma única cópia por sessão. Abrir de novo traz as configurações da instância já em execução.

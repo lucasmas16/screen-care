@@ -16,6 +16,9 @@ Interface ↔ configurações XML
 ## Mapa do código
 
 - `src/IdleController.cs`: máquina de estados de inatividade.
+- `src/MonitorPowerGuard.cs`: retomada do desligamento com intervalos progressivos e ações manuais adiadas.
+- `src/Localization.cs`: idiomas, catálogo e tradução dos controles.
+- `src/Diagnostics.cs`: eventos locais limitados e registro de falhas.
 - `src/Native.cs` e `src/SessionState.cs`: entrada, energia e sessão.
 - `src/Images.cs` e `src/Slideshow.cs`: catálogo e apresentação.
 - `src/Settings.cs`: persistência; `SettingsForm.cs`: edição.

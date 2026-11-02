@@ -135,7 +135,7 @@ namespace ScreenCare
                 InstallFiles(InstallDirectory, stage, previous);
                 using (RegistryKey key = Registry.CurrentUser.CreateSubKey(UninstallKey))
                 {
-                    key.SetValue("DisplayName", "Screen Care"); key.SetValue("DisplayVersion", "1.5.0");
+                    key.SetValue("DisplayName", "Screen Care"); key.SetValue("DisplayVersion", "1.5.1");
                     key.SetValue("Publisher", "Screen Care"); key.SetValue("InstallLocation", InstallDirectory);
                     key.SetValue("DisplayIcon", Path.Combine(InstallDirectory, "ScreenCare.exe"));
                     key.SetValue("UninstallString", "\"" + Path.Combine(InstallDirectory, "Uninstall.exe") + "\" --uninstall");
@@ -285,7 +285,7 @@ namespace ScreenCare
             var localized = new LocalizedControls(this);
             Action translate = delegate {
                 localized.Apply(L10n.Current);
-                body.Text = "Screen Care 1.5.0\n\n" + L10n.T(bodyText);
+                body.Text = "Screen Care 1.5.1\n\n" + L10n.T(bodyText);
                 location.Text = L10n.T("Destino: ") + SetupProgram.InstallDirectory;
                 Invalidate(true);
             };

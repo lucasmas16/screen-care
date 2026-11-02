@@ -1,0 +1,10 @@
+{
+  "description": "Exceções revisadas por conteúdo exato. Revisar novamente após qualquer alteração.",
+  "files": {
+    "ScreenCare.ico": {
+      "sha256": "00ff06cc731dbc7f244971500cae28397bc1c0c65e3d291249359e818170a764",
+      "reason": "Recurso visual de aplicativo revisado",
+      "binary": true
+    }
+  }
+}

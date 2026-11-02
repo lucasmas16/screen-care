@@ -25,6 +25,7 @@ namespace ScreenCare
         [STAThread]
         private static void Main(string[] args)
         {
+            string settingsWarning; L10n.Current = SettingsStore.Load(SettingsStore.DefaultPath, out settingsWarning).Language;
             Native.EnableDpi(); Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
             try
             {
@@ -34,22 +35,22 @@ namespace ScreenCare
                 {
                     int pid;
                     if (!Int32.TryParse(args[1], out pid)) return;
-                    try { using (var parent = Process.GetProcessById(pid)) { if (!parent.WaitForExit(15000)) throw new IOException("O desinstalador anterior ainda está aberto."); } } catch (ArgumentException) { }
+                    try { using (var parent = Process.GetProcessById(pid)) { if (!parent.WaitForExit(15000)) throw new IOException(L10n.T("O desinstalador anterior ainda está aberto.")); } } catch (ArgumentException) { }
                     Remove();
-                    MessageBox.Show("Screen Care desinstalado. Suas configurações foram preservadas.", "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(L10n.T("Screen Care desinstalado. Suas configurações foram preservadas."), "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
                 bool owned;
                 using (var mutex = new Mutex(true, "Local\\MonitorPausa.Setup", out owned))
                 {
-                    if (!owned) { MessageBox.Show("O instalador já está aberto.", "Screen Care"); return; }
+                    if (!owned) { MessageBox.Show(L10n.T("O instalador já está aberto."), "Screen Care"); return; }
                     try { Application.Run(new SetupForm()); } finally { mutex.ReleaseMutex(); }
                 }
             }
             catch (Exception ex)
             {
                 if (args.Length == 2 && args[0] == "--verify-payload") { Environment.ExitCode = 1; return; }
-                MessageBox.Show("Não foi possível concluir.\n\n" + ex.Message, "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(L10n.T("Não foi possível concluir.\n\n") + ex.Message, "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Environment.ExitCode = 1;
             }
         }
@@ -58,7 +59,7 @@ namespace ScreenCare
             ValidatePaths(InstallDirectory, ShortcutDirectory);
             if (Directory.Exists(InstallDirectory) && Directory.GetFileSystemEntries(InstallDirectory).Length > 0 &&
                 (!File.Exists(Path.Combine(InstallDirectory, ".monitorpausa-install")) || File.ReadAllText(Path.Combine(InstallDirectory, ".monitorpausa-install")) != Marker))
-                throw new IOException("A pasta de destino já existe e não pertence a esta instalação: " + InstallDirectory);
+                throw new IOException(L10n.T("A pasta de destino já existe e não pertence a esta instalação: ") + InstallDirectory);
         }
         internal static void ValidatePaths(string install, string shortcuts)
         {
@@ -86,7 +87,7 @@ namespace ScreenCare
                 if (matching.Count > 0)
                 {
                     foreach (Process process in matching)
-                        if (!process.WaitForExit(10000)) throw new IOException("Feche o Screen Care pelo ícone perto do relógio e tente novamente.");
+                        if (!process.WaitForExit(10000)) throw new IOException(L10n.T("Feche o Screen Care pelo ícone perto do relógio e tente novamente."));
                 }
             }
             finally { foreach (Process process in matching) process.Dispose(); }
@@ -99,7 +100,7 @@ namespace ScreenCare
             {
                 using (Stream source = Assembly.GetExecutingAssembly().GetManifestResourceStream("Payload." + name))
                 {
-                    if (source == null) throw new IOException("Arquivo ausente no instalador: " + name);
+                    if (source == null) throw new IOException(L10n.T("Arquivo ausente no instalador: ") + name);
                     using (var destination = new FileStream(Path.Combine(directory, name), FileMode.CreateNew, FileAccess.Write)) source.CopyTo(destination);
                 }
             }
@@ -107,11 +108,11 @@ namespace ScreenCare
         internal static void VerifyPayload(string directory)
         {
             string target = Path.GetFullPath(directory);
-            if (Directory.Exists(target) && Directory.GetFileSystemEntries(target).Length > 0) throw new IOException("Use uma pasta de teste vazia.");
+            if (Directory.Exists(target) && Directory.GetFileSystemEntries(target).Length > 0) throw new IOException(L10n.T("Use uma pasta de teste vazia."));
             Extract(target);
             string executable = Path.Combine(target, "ScreenCare.exe");
             AssemblyName identity = AssemblyName.GetAssemblyName(executable);
-            if (identity.Name != "ScreenCare") throw new IOException("Identidade inválida.");
+            if (identity.Name != "ScreenCare") throw new IOException(L10n.T("Identidade inválida."));
             File.WriteAllText(Path.Combine(target, "payload-ok.txt"), identity.FullName);
         }
         internal static void Install()
@@ -134,7 +135,7 @@ namespace ScreenCare
                 InstallFiles(InstallDirectory, stage, previous);
                 using (RegistryKey key = Registry.CurrentUser.CreateSubKey(UninstallKey))
                 {
-                    key.SetValue("DisplayName", "Screen Care"); key.SetValue("DisplayVersion", "1.4.1");
+                    key.SetValue("DisplayName", "Screen Care"); key.SetValue("DisplayVersion", "1.5.0");
                     key.SetValue("Publisher", "Screen Care"); key.SetValue("InstallLocation", InstallDirectory);
                     key.SetValue("DisplayIcon", Path.Combine(InstallDirectory, "ScreenCare.exe"));
                     key.SetValue("UninstallString", "\"" + Path.Combine(InstallDirectory, "Uninstall.exe") + "\" --uninstall");
@@ -236,7 +237,7 @@ namespace ScreenCare
         private static void LaunchUninstall()
         {
             ValidateInstallDirectory();
-            if (MessageBox.Show("Desinstalar o Screen Care deste usuário?\n\nAs configurações e suas imagens serão preservadas.", "Desinstalar Screen Care", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (MessageBox.Show(L10n.T("Desinstalar o Screen Care deste usuário?\n\nAs configurações e suas imagens serão preservadas."), L10n.T("Desinstalar Screen Care"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             string helper = Path.Combine(Path.GetTempPath(), "ScreenCare-remove-" + Guid.NewGuid().ToString("N") + ".exe");
             File.Copy(Application.ExecutablePath, helper);
             Process.Start(new ProcessStartInfo(helper, "--remove " + Process.GetCurrentProcess().Id) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden });
@@ -244,7 +245,7 @@ namespace ScreenCare
         private static void Remove()
         {
             ValidateInstallDirectory();
-            if (!File.Exists(Path.Combine(InstallDirectory, ".monitorpausa-install"))) throw new IOException("Esta instalação não foi localizada.");
+            if (!File.Exists(Path.Combine(InstallDirectory, ".monitorpausa-install"))) throw new IOException(L10n.T("Esta instalação não foi localizada."));
             StopInstalledApp();
             Startup.Set(false, "");
             // Keep the marker and uninstall entry until the executable has been successfully removed.
@@ -270,25 +271,37 @@ namespace ScreenCare
             palette = new Palette(SettingsStore.Load(SettingsStore.DefaultPath, out warning).Appearance);
             Text = "Instalar Screen Care"; Icon = Theme.MakeIcon();
             Font = new Font("Segoe UI", 10); ForeColor = palette.Text; BackColor = palette.Background;
-            ClientSize = new Size(540, 358); AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
+            ClientSize = new Size(580, 420); AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
             StartPosition = FormStartPosition.CenterScreen; FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
             var title = new Label { Text = "Uma pausa para suas telas.", Font = new Font("Segoe UI Semibold", 21), AutoSize = true, Location = new Point(24, 23) };
-            var body = new Label { Text = "Screen Care 1.4.1\n\nDesligue os monitores ou exiba suas imagens quando\nvocê parar de usar o computador.\n\nInstalação só para você, sem senha de administrador.", AutoSize = true, Location = new Point(27, 78), Tag = "muted" };
-            var location = new Label { Text = "Destino: " + SetupProgram.InstallDirectory, Location = new Point(27, 225), Size = new Size(486, 44), Tag = "muted", AutoEllipsis = true };
-            var install = Theme.Button("Instalar e abrir", true); install.Location = new Point(340, 291); install.Size = new Size(171, 39);
-            var cancel = Theme.Button("Cancelar", false); cancel.Location = new Point(213, 291); cancel.Click += delegate { Close(); };
-            Controls.AddRange(new Control[] { title, body, location, install, cancel });
+            const string bodyText = "Desligue os monitores ou exiba suas imagens quando\nvocê parar de usar o computador.\n\nInstalação só para você, sem senha de administrador.";
+            var body = new Label { AutoSize = true, Location = new Point(27, 78), Tag = "muted" };
+            var location = new Label { Location = new Point(27, 225), Size = new Size(526, 44), Tag = "muted", AutoEllipsis = true };
+            var languageLabel = new Label { Text = "Idioma", Location = new Point(27, 288), AutoSize = true };
+            var languagePicker = L10n.LanguagePicker(L10n.Current); languagePicker.Location = new Point(128, 284);
+            var install = Theme.Button("Instalar e abrir", true); install.Location = new Point(380, 359); install.Size = new Size(173, 39);
+            var cancel = Theme.Button("Cancelar", false); cancel.Location = new Point(253, 359); cancel.Click += delegate { Close(); };
+            Controls.AddRange(new Control[] { title, body, location, languageLabel, languagePicker, install, cancel });
+            var localized = new LocalizedControls(this);
+            Action translate = delegate {
+                localized.Apply(L10n.Current);
+                body.Text = "Screen Care 1.5.0\n\n" + L10n.T(bodyText);
+                location.Text = L10n.T("Destino: ") + SetupProgram.InstallDirectory;
+                Invalidate(true);
+            };
+            languagePicker.SelectedIndexChanged += delegate { L10n.Current = (Language)languagePicker.SelectedIndex; translate(); };
+            translate();
             install.Click += async delegate {
-                installing = true; install.Enabled = cancel.Enabled = false; install.Text = "Instalando…";
+                installing = true; install.Enabled = cancel.Enabled = languagePicker.Enabled = false; install.Text = L10n.T("Instalando…");
                 try
                 {
                     // Keep COM shortcut creation on this STA thread; the small local payload copies quickly.
                     await Task.Yield(); SetupProgram.Install();
-                    Process.Start(new ProcessStartInfo(Path.Combine(SetupProgram.InstallDirectory, "ScreenCare.exe")) { UseShellExecute = true });
+                    Process.Start(new ProcessStartInfo(Path.Combine(SetupProgram.InstallDirectory, "ScreenCare.exe"), L10n.Current == Language.Portuguese ? "--language=pt-BR" : "--language=en") { UseShellExecute = true });
                     installing = false; Close();
                 }
-                catch (Exception ex) { MessageBox.Show(this, ex.Message, "Não foi possível instalar", MessageBoxButtons.OK, MessageBoxIcon.Error); }
-                finally { installing = false; install.Enabled = cancel.Enabled = true; install.Text = "Instalar e abrir"; }
+                catch (Exception ex) { MessageBox.Show(this, ex.Message, L10n.T("Não foi possível instalar"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                finally { installing = false; install.Enabled = cancel.Enabled = languagePicker.Enabled = true; install.Text = L10n.T("Instalar e abrir"); }
             };
             FormClosing += delegate(object sender, FormClosingEventArgs e) { if (installing) e.Cancel = true; };
             PaintUi.Apply(this, palette);

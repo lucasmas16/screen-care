@@ -239,6 +239,10 @@ namespace ScreenCare
         }
         private static void TestMouse()
         {
+            Check(InputWindow.KeyboardIsActivity(0x57, 0x7A), "valid F11 keyboard input counts");
+            Check(InputWindow.KeyboardIsActivity(0, 0xB3), "media key without a scan code remains supported");
+            Check(!InputWindow.KeyboardIsActivity(0xFF, 0x41), "keyboard overrun does not cancel monitor-off");
+            Check(!InputWindow.KeyboardIsActivity(0, 0xFF) && !InputWindow.KeyboardIsActivity(0, 0), "unmapped and empty keyboard reports are ignored");
             bool have = false; int x = 0, y = 0;
             Check(!InputWindow.MouseIsActivity(0, 0, 0, 0, ref have, ref x, ref y), "empty mouse report is ignored");
             Check(InputWindow.MouseIsActivity(0, 0, 1, 0, ref have, ref x, ref y), "relative movement counts");
@@ -553,7 +557,9 @@ namespace ScreenCare
                 Check((IdleAction)type.GetProperty("EffectiveAction", flags).GetValue(app, null) == IdleAction.MonitorsOff, "manual F11 action overrides slideshow even with automation paused");
                 var settings = (Settings)type.GetField("settings", flags).GetValue(app);
                 Check(!settings.Enabled && settings.Action == IdleAction.Slideshow, "manual monitor-off preserves configured mode and automation preference");
+                Check((uint)type.GetField("powerFlags", flags).GetValue(app) == 0x80000001u, "F11 keeps background playback running without requesting display-on");
                 type.GetMethod("OnInput", flags).Invoke(app, null);
+                Check((uint)type.GetField("powerFlags", flags).GetValue(app) == 0x80000000u, "ending manual monitor-off releases its system-only power request");
                 Check((IdleAction)type.GetProperty("EffectiveAction", flags).GetValue(app, null) == IdleAction.Slideshow, "user activity restores configured mode after manual power-off");
                 Check(!((MonitorPowerGuard)type.GetField("powerGuard", flags).GetValue(app)).Armed, "user activity cancels monitor guard in running app");
             }

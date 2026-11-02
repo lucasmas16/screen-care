@@ -1,4 +1,4 @@
-param([string]$BuildDirectory = (Join-Path $PSScriptRoot '..\dist'), [string]$Version = '1.4.1')
+param([string]$BuildDirectory = (Join-Path $PSScriptRoot '..\dist'), [string]$Version = '1.5.1')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Versão inválida.' }
 $build = [IO.Path]::GetFullPath($BuildDirectory)

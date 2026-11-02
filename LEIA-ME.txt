@@ -1,9 +1,97 @@
-SCREEN CARE 1.4.1 — Windows 10/11, x64
+SCREEN CARE 1.5.0 — Windows 10/11, x64
+
+ENGLISH — Portuguese instructions follow below.
+
+PURPOSE
+Screen Care helps reduce prolonged static-image exposure and the risk of burn-in and image retention.
+It uses real user inactivity and sends its own monitor-off request, even when a background app keeps
+the normal Windows display timeout from working. Hardware, drivers and Windows policies still apply;
+the app cannot guarantee prevention of all wake-ups or all burn-in. Turning displays off reduces panel
+use more than a slideshow. The computer and background audio can continue running.
+
+INSTALL OR RUN PORTABLE
+Download ScreenCare-Setup.exe and ScreenCare-Setup.exe.config to the same folder. Run the installer,
+choose English or Português (Brasil), then select Install and open. No administrator password is needed.
+For portable use, extract ScreenCare-Portatil.zip to a permanent folder and run ScreenCare.exe.
+Requires Windows 10/11 x64 and .NET Framework 4.8+. Executables are not publisher-signed.
+
+TRAY AND SHORTCUTS
+Find the icon near the clock, possibly inside the hidden-icons arrow. Double-click for settings.
+Right-click to pause automation, start the selected action, turn off displays or exit.
+Ctrl+Alt+F11: turn off displays after two seconds, even with slideshow selected or automation paused.
+This manual action preserves your saved preferences. Repeating the shortcut restarts the countdown.
+Ctrl+Alt+F12: enable/pause automation. This also cancels a pending manual countdown.
+If a shortcut is owned by another app, use the tray menu; Screen Care reports the conflict and stays open.
+Closing settings keeps the app running. Save settings applies pending edits.
+
+LANGUAGE, THEME AND SETTINGS
+Use the language selector to switch between English and Português (Brasil). Language and theme apply
+and save immediately without applying other pending edits. On first use, Portuguese Windows locales
+select Portuguese; other locales select English. Light/dark themes also apply to menus and notices.
+Choose Turn off displays or Slideshow, then an idle timeout from 10 seconds to 24 hours.
+For slideshows, choose a folder, a 2–3600 second interval, subfolders and shuffle as needed.
+Enable Start with Windows if desired. For portable use, keep the executable in the same location.
+The same image is fitted to all monitors without distortion. Esc also exits the slideshow.
+
+ACTIVITY AND POWER
+Keyboard, mouse, touchpad and gamepad activity reset the timer, independently of video, music or CPU use.
+DualSense/Edge USB and Bluetooth, XInput/Steam Input and WinMM controllers are supported. Held buttons,
+triggers and sticks outside the dead zone count as activity; idle controllers and minor drift do not.
+Virtual devices that emulate physical input may be indistinguishable from real activity.
+After display-off, input returns to normal monitoring. Without input, an unexpected display wake causes
+another monitor-off request after at least three seconds. Missing acknowledgement or persistent conflicts
+use delays of 5, 15, 30 and then 60 seconds. Confirmed display-off stops retrying; input cancels retries.
+Screen Care does not shut down the PC. It holds its own display/system stay-awake request during the
+configured wait and slideshow, then releases it after monitor-off, pause, exit or suspension.
+Windows security policies, manual suspension and critical battery actions take priority.
+Monitor topology changes caused by standby do not reassert the app's stay-awake request.
+
+LOCKED SESSION
+Both modes turn off monitors when Windows is locked. Photos appear only in the unlocked session.
+Unlock, resume and session changes start a fresh countdown. Input at the lock screen grants a new wait
+period for login. Lock-screen last-input time cannot perfectly distinguish physical from simulated input.
+Opening settings in an unlocked session pauses automatic actions until the window closes.
+
+IMAGES AND MEMORY
+Supported: JPG/JPEG, PNG, BMP, GIF and TIFF. Only the first GIF/TIFF frame/page is used; no HEIC/WebP.
+Limits: 20,000 images, 64 MB per file and 40 megapixels. Linked directories are not followed recursively.
+Invalid images are skipped. The current shared bitmap is capped at 8.3 megapixels (about 32 MB), with
+additional temporary decoding memory. The image catalog refreshes when a new slideshow starts.
+
+PRIVACY, FILES AND TROUBLESHOOTING
+No telemetry, HTTP client, server, background service or internet connection. No typed text, individual
+keys or cursor positions are written to files. User-selected network folders use Windows file access.
+Legacy MonitorPausa directory names are retained for upgrades and existing preferences.
+Program: %LOCALAPPDATA%\Programs\MonitorPausa
+Settings: %LOCALAPPDATA%\MonitorPausa\settings.xml
+Local events: %LOCALAPPDATA%\MonitorPausa\diagnostics.log (approximately 64 KB maximum)
+Last error: %LOCALAPPDATA%\MonitorPausa\last-error.txt
+The event log uses timestamps and fixed codes, not file names, input details or window titles.
+Error messages may include local paths: review them before sharing. Nothing is uploaded automatically.
+Recoverable UI errors pause automation and leave the tray app available; review settings and enable it
+again. Severe or repeated errors may require reopening. No exact cause has been confirmed for the
+previous disappearing-icon report. Use the version and local logs when reporting recurrence.
+
+UNINSTALL
+Use Windows Settings > Apps > Screen Care, or the Start menu shortcut. Uninstalling preserves settings
+and photos. A small removal helper remains in the temporary folder until Windows temporary-file cleanup.
+Install/shortcut paths must not contain junctions or symbolic links. Use only one copy per session.
+
+LICENSE
+MIT. See LICENSE. The portable package and installer both include the license.
+
+--------------------------------------------------------------------------
+
+SCREEN CARE 1.5.0 — Windows 10/11, x64
+
+PORTUGUÊS (BRASIL)
 
 INSTALAR
 Abra ScreenCare-Setup.exe e clique em Instalar e abrir.
 O aplicativo fica na área de notificação, perto do relógio (talvez dentro da seta ^).
 Clique duas vezes no ícone para configurar; botão direito para pausar, iniciar agora ou sair.
+Use Ctrl+Alt+F11 para desligar os monitores em 2 segundos, mesmo com slideshow selecionado ou automação pausada.
+A opção também está no menu do ícone. Ela não muda suas preferências salvas.
 Use Ctrl+Alt+F12 em qualquer aplicativo para ativar ou desativar o monitoramento. Uma notificação confirma o novo estado.
 O aviso aparece por 3 segundos no centro inferior do monitor principal, sem tirar o foco.
 O monitor com confirmação representa ativado; o monitor com pausa representa desativado.
@@ -11,9 +99,11 @@ Alternar novamente substitui o aviso anterior imediatamente e reinicia os 3 segu
 Fechar a janela de configurações mantém o aplicativo em execução. Clique em Salvar para aplicar alterações.
 
 CONFIGURAR
-Use o seletor Light / Dark no canto superior direito para alternar o tema.
+Use o seletor de idioma para escolher English ou Português (Brasil). A escolha é salva e aplicada imediatamente.
+No primeiro uso, o idioma acompanha o Windows: português nos sistemas lusófonos e inglês nos demais.
+Use o seletor Claro / Escuro no canto superior direito para alternar o tema.
 O tema é aplicado e salvo imediatamente, sem aplicar as outras opções ainda em edição.
-O menu do ícone também acompanha o tema. A interface inicia em Dark para configurações antigas.
+O menu do ícone também acompanha o tema. A interface inicia em Escuro para configurações antigas.
 Escolha desligar todos os monitores ou slideshow. Defina uma espera entre 10 segundos e 24 horas.
 Para slideshow, escolha uma pasta. A mesma imagem aparece em todas as telas, inteira e sem distorção.
 Intervalo entre imagens: 2 a 3600 segundos. Há opções para subpastas e ordem aleatória.
@@ -32,9 +122,11 @@ gatilhos e analógicos fora da zona de repouso contam como atividade, mesmo mant
 Controle conectado e parado não impede o descanso. Pequenas oscilações dos analógicos são ignoradas.
 Teclado, mouse ou atividade do controle encerram o slideshow e reiniciam a contagem. Esc também encerra a apresentação.
 Desligar monitores não desliga o computador: o Windows pede economia de energia às telas conectadas.
-É enviado um único pedido por período de inatividade. Mudanças de conexão causadas pelo descanso
-das telas não reativam a solicitação de mantê-las acesas. Não há repetição do pedido a cada 5 segundos.
-Se outro programa ou driver reacender as telas, o app não disputa continuamente o estado com ele.
+Mudanças de conexão causadas pelo descanso das telas não reativam a solicitação de mantê-las acesas.
+Se a tela reacender sem atividade, o app tenta desligá-la novamente. A confirmação de tela desligada
+interrompe as tentativas; sem confirmação, os intervalos crescem de 5 para 15, 30 e 60 segundos.
+Após um reacendimento, há pelo menos 3 segundos para processar entrada pendente.
+Teclado, mouse, controle, pausa e mudanças de sessão cancelam as tentativas.
 O comportamento físico depende dos monitores, drivers e sessão; valide no seu equipamento.
 
 Com a automação habilitada, o Screen Care mantém tela e sistema acordados durante a espera e o
@@ -63,12 +155,16 @@ ARQUIVOS E DESINSTALAÇÃO
 O nome anterior, MonitorPausa, permanece nas pastas internas para preservar atualizações e preferências.
 Programa: %LOCALAPPDATA%\Programs\MonitorPausa
 Configurações: %LOCALAPPDATA%\MonitorPausa\settings.xml
+Eventos locais de execução, limitados a aproximadamente 64 KB: %LOCALAPPDATA%\MonitorPausa\diagnostics.log
 Último erro, se houver: %LOCALAPPDATA%\MonitorPausa\last-error.txt
 Desinstale em Configurações do Windows > Aplicativos > Screen Care, ou pelo menu Iniciar.
 A desinstalação remove programa, atalhos e inicialização automática, preservando configurações e fotos.
 Um pequeno auxiliar de desinstalação fica na pasta temporária até a limpeza de temporários do Windows.
 Instalação e atalhos exigem caminhos sem junctions ou links simbólicos.
+O log de eventos contém horários e códigos fixos, sem teclas, nomes de arquivos ou títulos de janelas.
 O log do último erro pode conter caminhos locais; revise-o antes de compartilhar.
+Erros recuperáveis pausam a automação e mantêm o app aberto; revise as opções e ative novamente.
+Erros graves ou repetidos podem exigir reabrir o app. Os registros não são enviados a ninguém.
 
 REQUISITOS
 Windows 10/11 x64, .NET Framework 4.8 ou superior. Normalmente já presente no Windows atualizado.

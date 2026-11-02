@@ -30,12 +30,12 @@ namespace ScreenCare
     internal sealed class OverviewPanel : GlassPanel
     {
         internal bool Slideshow, Active = true;
-        internal string Wait = "5 minutos";
+        internal string Wait = "";
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e); Graphics g = e.Graphics; float s = PaintUi.Scale(this);
             int pad = (int)(23 * s), textWidth = Width - pad * 2;
-            using (var small = new Font("Segoe UI", 8.2f, FontStyle.Bold)) PaintUi.Text(g, "SUAS TELAS", small, palette.Muted, new Rectangle(pad, (int)(25 * s), textWidth, (int)(22 * s)), TextFormatFlags.SingleLine);
+            using (var small = new Font("Segoe UI", 8.2f, FontStyle.Bold)) PaintUi.Text(g, L10n.T("SUAS TELAS"), small, palette.Muted, new Rectangle(pad, (int)(25 * s), textWidth, (int)(22 * s)), TextFormatFlags.SingleLine);
             float cx = Width / 2f - 3 * s, y = 110 * s, w = Math.Min(198 * s, Width - 49 * s), h = w * .66f;
             // Static vector layers create glass depth without blur loops or an image cache.
             var rear = new RectangleF(cx - w / 2 + 15 * s, y - 18 * s, w - 6 * s, h);
@@ -53,11 +53,11 @@ namespace ScreenCare
             }
             else PaintUi.Glyph(g, "power", new RectangleF(display.X + (display.Width - 38 * s) / 2, display.Y + (display.Height - 38 * s) / 2, 38 * s, 38 * s), palette.Accent, 1.4f);
             using (var pen = new Pen(palette.Line, 3 * s)) { g.DrawLine(pen, cx - 8 * s, screen.Bottom + 2 * s, cx - 8 * s, screen.Bottom + 25 * s); g.DrawLine(pen, cx - 39 * s, screen.Bottom + 26 * s, cx + 23 * s, screen.Bottom + 26 * s); }
-            using (var title = new Font("Segoe UI Semibold", 17)) PaintUi.Text(g, Active ? Slideshow ? "Seu álbum, em pausa." : "Hora de descansar." : "No seu controle.", title, palette.Text, new Rectangle(pad, (int)(315 * s), textWidth, (int)(64 * s)), TextFormatFlags.WordBreak);
-            string description = !Active ? "A ação automática está pausada." : (Slideshow ? "Suas imagens em todas as telas, após " : "Todos os monitores desligam após ") + Wait + " sem atividade.";
+            using (var title = new Font("Segoe UI Semibold", 17)) PaintUi.Text(g, Active ? Slideshow ? L10n.T("Seu álbum, em pausa.") : L10n.T("Hora de descansar.") : L10n.T("No seu controle."), title, palette.Text, new Rectangle(pad, (int)(315 * s), textWidth, (int)(64 * s)), TextFormatFlags.WordBreak);
+            string description = !Active ? L10n.T("A ação automática está pausada.") : L10n.Format(Slideshow ? "Suas imagens em todas as telas, após {0} sem atividade." : "Todos os monitores desligam após {0} sem atividade.", Wait);
             PaintUi.Text(g, description, Font, palette.Muted, new Rectangle(pad, (int)(393 * s), textWidth, (int)(89 * s)), TextFormatFlags.WordBreak);
             using (var pen = new Pen(palette.Line, s)) g.DrawLine(pen, pad, Height - 76 * s, Width - pad - 5 * s, Height - 76 * s);
-            using (var small = new Font("Segoe UI", 8.6f)) PaintUi.Text(g, "Volte com um toque no teclado\nou um movimento do mouse.", small, palette.Muted, new Rectangle(pad, Height - (int)(62 * s), textWidth, (int)(48 * s)), TextFormatFlags.WordBreak);
+            using (var small = new Font("Segoe UI", 8.6f)) PaintUi.Text(g, L10n.T("Volte com um toque no teclado\nou um movimento do mouse."), small, palette.Muted, new Rectangle(pad, Height - (int)(62 * s), textWidth, (int)(48 * s)), TextFormatFlags.WordBreak);
         }
     }
 
@@ -88,26 +88,33 @@ namespace ScreenCare
         private Palette palette;
         private Appearance appearance;
         private int unitIndex;
-        private bool themeChanging;
+        private bool themeChanging, languageChanging;
+        private Language language;
+        private readonly ComboBox languagePicker;
+        private readonly LocalizedControls localized;
+        internal event Action<Language> LanguageRequested;
+        internal Language CurrentLanguage { get { return language; } }
         internal event Action<Settings> SaveRequested;
         internal event Action<Appearance> ThemeRequested;
         internal Appearance CurrentAppearance { get { return appearance; } }
 
         internal SettingsForm(Settings settings)
         {
-            SuspendLayout(); original = settings.Copy(); appearance = settings.Appearance; palette = new Palette(appearance);
+            SuspendLayout(); language = settings.Language; L10n.Current = language; original = settings.Copy(); appearance = settings.Appearance; palette = new Palette(appearance);
             Text = "Screen Care"; Icon = Theme.MakeIcon(); Font = new Font("Segoe UI", 9.5f);
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
             AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = new Size(944, 740); MinimumSize = new Size(900, 610); StartPosition = FormStartPosition.CenterScreen; MaximizeBox = false;
             var root = Table(1); root.Dock = DockStyle.Fill; root.RowCount = 3; root.AutoSize = false;
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 88)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); root.RowStyles.Add(new RowStyle(SizeType.Absolute, 70)); Controls.Add(root);
-            var header = Table(2); header.Dock = DockStyle.Fill; header.Padding = new Padding(26, 18, 28, 12);
-            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 156));
+            var header = Table(3); header.Dock = DockStyle.Fill; header.Padding = new Padding(26, 18, 28, 12);
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 184)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 196));
             var brand = Table(1); brand.Dock = DockStyle.Fill;
             brand.Controls.Add(Label("Screen Care", 18, true, false, 32)); brand.Controls.Add(Label("Um descanso para suas telas.", 9, false, true, 21));
             themeToggle = new ThemeToggle { Checked = appearance == Appearance.Dark, Anchor = AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(0, 5, 0, 0), TabIndex = 0 };
-            header.Controls.Add(brand, 0, 0); header.Controls.Add(themeToggle, 1, 0); root.Controls.Add(header, 0, 0);
+            languagePicker = L10n.LanguagePicker(language);
+            languagePicker.Anchor = AnchorStyles.Right | AnchorStyles.Top; languagePicker.Margin = new Padding(0, 10, 18, 0);
+            header.Controls.Add(brand, 0, 0); header.Controls.Add(languagePicker, 1, 0); header.Controls.Add(themeToggle, 2, 0); root.Controls.Add(header, 0, 0);
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Color.Transparent, Padding = new Padding(24, 0, 24, 0), Margin = Padding.Empty };
             root.Controls.Add(scroll, 0, 1);
             var columns = Table(2); columns.AutoSize = false; columns.Height = 570; columns.Dock = DockStyle.Top;
@@ -149,7 +156,7 @@ namespace ScreenCare
             pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 103));
             folder = new FolderField { Dock = DockStyle.Fill }; folder.Entry.Text = settings.ImageFolder;
             var browse = new SoftButton { Text = "Escolher…", Dock = DockStyle.Fill, Margin = new Padding(8, 0, 0, 0), AccessibleName = "Escolher pasta de imagens" };
-            browse.Click += delegate { using (var dialog = new FolderBrowserDialog { Description = "Escolha a pasta com as imagens do slideshow", ShowNewFolderButton = false, SelectedPath = Directory.Exists(folder.Entry.Text) ? folder.Entry.Text : "" }) if (dialog.ShowDialog(this) == DialogResult.OK) folder.Entry.Text = dialog.SelectedPath; };
+            browse.Click += delegate { using (var dialog = new FolderBrowserDialog { Description = L10n.T("Escolha a pasta com as imagens do slideshow"), ShowNewFolderButton = false, SelectedPath = Directory.Exists(folder.Entry.Text) ? folder.Entry.Text : "" }) if (dialog.ShowDialog(this) == DialogResult.OK) folder.Entry.Text = dialog.SelectedPath; };
             pathRow.Controls.Add(folder, 0, 0); pathRow.Controls.Add(browse, 1, 0); album.Controls.Add(pathRow);
             album.Controls.Add(Label("Com o Windows bloqueado, os monitores serão desligados.", 8.2f, false, true, 25)); album.Controls.Add(Gap(8));
             var cadence = Table(3); cadence.Height = 43; cadence.Dock = DockStyle.Top; cadence.AutoSize = false;
@@ -174,12 +181,14 @@ namespace ScreenCare
             var footer = Table(3); footer.AutoSize = false; footer.Dock = DockStyle.Fill; footer.Padding = new Padding(28, 10, 27, 13);
             FillRow(footer);
             footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
-            footer.Controls.Add(Label("Fechar a janela mantém o app na bandeja.", 8.5f, false, true, 43), 0, 0);
+            footer.Controls.Add(Label("Fechar mantém o app na bandeja.\nCtrl+Alt+F11: desligar telas em 2 segundos.", 8.5f, false, true, 43), 0, 0);
             var cancel = new SoftButton { Text = "Cancelar", Dock = DockStyle.Fill, Margin = new Padding(0, 0, 8, 0) }; var save = new SoftButton { Text = "Salvar configurações", Primary = true, Dock = DockStyle.Fill };
             cancel.Click += delegate { Close(); }; save.Click += delegate { Save(); };
             footer.Controls.Add(cancel, 1, 0); footer.Controls.Add(save, 2, 0); root.Controls.Add(footer, 0, 2); AcceptButton = save; CancelButton = cancel;
             enabled.CheckedChanged += delegate { UpdateOverview(); }; monitors.CheckedChanged += delegate { UpdateMode(); }; slideshow.CheckedChanged += delegate { UpdateMode(); };
             idle.ValueChanged += delegate { UpdateOverview(); }; themeToggle.CheckedChanged += delegate { ChangeTheme(themeToggle.Checked ? Appearance.Dark : Appearance.Light); };
+            localized = new LocalizedControls(this); localized.Apply(language);
+            languagePicker.SelectedIndexChanged += delegate { ChangeLanguage((Language)languagePicker.SelectedIndex); };
             UpdateMode(); ApplyAppearance(); ResumeLayout(true);
         }
         private static TableLayoutPanel Table(int columns)
@@ -204,14 +213,32 @@ namespace ScreenCare
         {
             if (overview == null || idle == null) return;
             overview.Slideshow = slideshow.Checked; overview.Active = enabled.Checked;
-            string unit = unitIndex == 2 ? (idle.Value == 1 ? "hora" : "horas") : unitIndex == 1 ? (idle.Value == 1 ? "minuto" : "minutos") : (idle.Value == 1 ? "segundo" : "segundos");
-            overview.Wait = idle.Valid ? idle.Value.ToString() + " " + unit : "o tempo escolhido"; overview.Invalidate();
+            overview.Wait = idle.Valid ? L10n.Duration(idle.Value, unitIndex, language) : L10n.T("o tempo escolhido"); overview.Invalidate();
+        }
+        internal void ChangeLanguage(Language next)
+        {
+            if (languageChanging || language == next) return;
+            languageChanging = true;
+            try
+            {
+                if (LanguageRequested != null) LanguageRequested(next);
+                language = next; original.Language = next; L10n.Current = next;
+                languagePicker.SelectedIndex = (int)next;
+                SuspendLayout(); localized.Apply(next); ResumeLayout(true);
+                UpdateOverview(); Invalidate(true);
+            }
+            catch (Exception ex)
+            {
+                languagePicker.SelectedIndex = (int)language;
+                MessageBox.Show(this, L10n.T("Não foi possível salvar o idioma. ") + ex.Message, "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally { languageChanging = false; }
         }
         internal void ChangeTheme(Appearance next)
         {
             if (themeChanging || appearance == next) return; themeChanging = true;
             try { if (ThemeRequested != null) ThemeRequested(next); appearance = next; original.Appearance = next; themeToggle.Checked = next == Appearance.Dark; ApplyAppearance(); }
-            catch (Exception ex) { themeToggle.Checked = appearance == Appearance.Dark; MessageBox.Show(this, "Não foi possível salvar o tema. " + ex.Message, "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex) { themeToggle.Checked = appearance == Appearance.Dark; MessageBox.Show(this, L10n.T("Não foi possível salvar o tema. ") + ex.Message, "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Error); }
             finally { themeChanging = false; }
         }
         private void ApplyAppearance() { palette = new Palette(appearance); BackColor = palette.Background; ForeColor = palette.Text; PaintUi.Apply(this, palette); PaintUi.TitleBar(this, palette); }
@@ -224,10 +251,10 @@ namespace ScreenCare
         }
         internal Settings ReadDraft()
         {
-            if (!idle.Valid) throw new InvalidOperationException("Informe um tempo de espera válido.");
+            if (!idle.Valid) throw new InvalidOperationException(L10n.T("Informe um tempo de espera válido."));
             long seconds = (long)idle.Value * (unitIndex == 2 ? 3600 : unitIndex == 1 ? 60 : 1);
-            if (seconds < 10 || seconds > 86400) throw new InvalidOperationException("Escolha um tempo entre 10 segundos e 24 horas.");
-            if (slideshow.Checked && !interval.Valid) throw new InvalidOperationException("Escolha um intervalo entre 2 e 3600 segundos para as imagens.");
+            if (seconds < 10 || seconds > 86400) throw new InvalidOperationException(L10n.T("Escolha um tempo entre 10 segundos e 24 horas."));
+            if (slideshow.Checked && !interval.Valid) throw new InvalidOperationException(L10n.T("Escolha um intervalo entre 2 e 3600 segundos para as imagens."));
             var next = original.Copy(); next.Enabled = enabled.Checked; next.Action = slideshow.Checked ? IdleAction.Slideshow : IdleAction.MonitorsOff;
             next.IdleSeconds = (int)seconds; next.ImageFolder = folder.Entry.Text.Trim(); next.SlideSeconds = interval.Valid ? interval.Value : original.SlideSeconds;
             next.IncludeSubfolders = recursive.Checked; next.Shuffle = shuffle.Checked; next.StartWithWindows = startup.Checked; next.Appearance = appearance; return next;
@@ -236,7 +263,7 @@ namespace ScreenCare
         { enabled.Checked = value; }
         private void Save()
         {
-            try { Settings next = ReadDraft(); if (next.Action == IdleAction.Slideshow && !Directory.Exists(next.ImageFolder)) throw new InvalidOperationException("Escolha uma pasta de imagens disponível."); if (SaveRequested != null) SaveRequested(next); Close(); }
+            try { Settings next = ReadDraft(); if (next.Action == IdleAction.Slideshow && !Directory.Exists(next.ImageFolder)) throw new InvalidOperationException(L10n.T("Escolha uma pasta de imagens disponível.")); if (SaveRequested != null) SaveRequested(next); Close(); }
             catch (Exception ex) { MessageBox.Show(this, ex.Message, "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Information); }
         }
     }

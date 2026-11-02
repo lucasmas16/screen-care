@@ -63,12 +63,16 @@ namespace ScreenCare
         internal event Action ShowRequested;
         internal event Action ExitRequested;
         internal event Action ToggleRequested;
+        internal event Action MonitorOffRequested;
         internal Func<bool> AllowMonitorOff;
         internal const int MonitorOffMessage = 0x8000 + 20;
         internal static readonly uint ShowMessage = Native.RegisterWindowMessage("MonitorPausa.Show.1");
         internal static readonly uint ExitMessage = Native.RegisterWindowMessage("MonitorPausa.Exit.1");
         internal const int ToggleHotKeyId = 0x4D50;
+        internal const int MonitorOffHotKeyId = 0x4D51;
         internal bool HotKeyRegistered { get; private set; }
+        internal bool MonitorOffHotKeyRegistered { get; private set; }
+        internal int MonitorOffHotKeyRegistrationError { get; private set; }
         internal int HotKeyRegistrationError { get; private set; }
         private IntPtr rawBuffer, powerNotification;
         private uint rawCapacity = 256;
@@ -96,15 +100,17 @@ namespace ScreenCare
                 new Native.RawDevice { Page = 1, Usage = 5, Flags = 0x2100, Target = hwnd }
             };
             if (!Native.RegisterRawInputDevices(devices, (uint)devices.Length, (uint)Marshal.SizeOf(typeof(Native.RawDevice))))
-            { int error = Marshal.GetLastWin32Error(); Dispose(); throw new Win32Exception(error, "Não foi possível monitorar teclado e mouse."); }
+            { int error = Marshal.GetLastWin32Error(); Dispose(); throw new Win32Exception(error, L10n.T("Não foi possível monitorar teclado e mouse.")); }
             registered = true;
             // MOD_ALT | MOD_CONTROL | MOD_NOREPEAT, VK_F12. A collision must not prevent the tray app from starting.
             HotKeyRegistered = Native.RegisterHotKey(hwnd, ToggleHotKeyId, 0x0001 | 0x0002 | 0x4000, 0x7B);
             if (!HotKeyRegistered) HotKeyRegistrationError = Marshal.GetLastWin32Error();
+            MonitorOffHotKeyRegistered = Native.RegisterHotKey(hwnd, MonitorOffHotKeyId, 0x0001 | 0x0002 | 0x4000, 0x7A);
+            if (!MonitorOffHotKeyRegistered) MonitorOffHotKeyRegistrationError = Marshal.GetLastWin32Error();
             Guid guid = Native.DisplayState;
             powerNotification = Native.RegisterPowerSettingNotification(hwnd, ref guid, 0);
             if (powerNotification == IntPtr.Zero || !Native.WTSRegisterSessionNotification(hwnd, 0))
-            { int error = Marshal.GetLastWin32Error(); Dispose(); throw new Win32Exception(error, "Não foi possível acompanhar a sessão e os monitores."); }
+            { int error = Marshal.GetLastWin32Error(); Dispose(); throw new Win32Exception(error, L10n.T("Não foi possível acompanhar a sessão e os monitores.")); }
         }
 
         internal static bool MouseIsActivity(ushort flags, ushort buttons, int x, int y, ref bool haveAbsolute, ref int oldX, ref int oldY)
@@ -182,6 +188,8 @@ namespace ScreenCare
             else if (m.Msg == 0x00FE) dualSenseDevices.Remove(m.LParam); // arrival/removal: handles can be reused
             else if (m.Msg == Native.WM_HOTKEY && m.WParam.ToInt32() == ToggleHotKeyId)
             { if (ToggleRequested != null) ToggleRequested(); }
+            else if (m.Msg == Native.WM_HOTKEY && m.WParam.ToInt32() == MonitorOffHotKeyId)
+            { if (MonitorOffRequested != null) MonitorOffRequested(); }
             else if ((uint)m.Msg == ShowMessage) { if (ShowRequested != null) ShowRequested(); }
             else if ((uint)m.Msg == ExitMessage) { if (ExitRequested != null) ExitRequested(); }
             else if (m.Msg == 0x007E) { if (DisplayLayoutChanged != null) DisplayLayoutChanged(); }
@@ -208,6 +216,7 @@ namespace ScreenCare
         protected override void Dispose(bool disposing)
         {
             if (HotKeyRegistered) { Native.UnregisterHotKey(Handle, ToggleHotKeyId); HotKeyRegistered = false; }
+            if (MonitorOffHotKeyRegistered) { Native.UnregisterHotKey(Handle, MonitorOffHotKeyId); MonitorOffHotKeyRegistered = false; }
             if (registered)
             {
                 Native.RegisterRawInputDevices(new[] {

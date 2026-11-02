@@ -7,11 +7,11 @@ using System.Threading;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Screen Care")]
-[assembly: AssemblyDescription("Slideshow e descanso dos monitores por inatividade real")]
+[assembly: AssemblyDescription("Reduce static-image exposure with activity-based monitor standby and slideshows")]
 [assembly: AssemblyCompany("Screen Care")]
 [assembly: AssemblyProduct("Screen Care")]
-[assembly: AssemblyVersion("1.4.1.0")]
-[assembly: AssemblyFileVersion("1.4.1.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 // Every native dependency is a Windows component. Never search the working
 // directory or the portable application's directory for these DLLs.
 [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
@@ -26,6 +26,11 @@ namespace ScreenCare
             Native.EnableDpi();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e) {
+                var error = e.ExceptionObject as Exception;
+                if (error != null) Diagnostics.Error(error);
+                Diagnostics.Event("unhandled-process-error");
+            };
             if (Array.IndexOf(args, "--quit") >= 0)
             { Native.PostMessage(new IntPtr(0xFFFF), InputWindow.ExitMessage, IntPtr.Zero, IntPtr.Zero); return; }
             bool owned;
@@ -36,22 +41,30 @@ namespace ScreenCare
                 TrayApplication app = null;
                 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
                 Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e)
-                { if (app != null) app.Shutdown(); Report(e.Exception); };
+                {
+                    Diagnostics.Error(e.Exception);
+                    if (app != null && app.TryRecover(e.Exception)) return;
+                    try { if (app != null) app.Shutdown(); } finally { Report(e.Exception); }
+                };
                 try
                 {
                     string warning;
                     Settings settings = SettingsStore.Load(SettingsStore.DefaultPath, out warning);
+                    Language selected = Array.IndexOf(args, "--language=en") >= 0 ? Language.English : Array.IndexOf(args, "--language=pt-BR") >= 0 ? Language.Portuguese : settings.Language;
+                    L10n.Current = selected;
+                    if (settings.Language != selected) { settings.Language = selected; SettingsStore.Save(settings, SettingsStore.DefaultPath); }
+                    Diagnostics.Event("start-1.5.0");
                     using (app = new TrayApplication(settings, Array.IndexOf(args, "--background") < 0 || warning != null))
-                    { if (warning != null) app.Notify(warning); Application.Run(app); }
+                    { if (warning != null) app.Notify(L10n.T(warning)); Application.Run(app); }
                 }
-                catch (Exception ex) { if (app != null) app.Shutdown(); Report(ex); }
+                catch (Exception ex) { Diagnostics.Error(ex); try { if (app != null) app.Shutdown(); } finally { Report(ex); } }
                 finally { mutex.ReleaseMutex(); }
             }
         }
         private static void Report(Exception ex)
         {
-            try { Directory.CreateDirectory(SettingsStore.DirectoryPath); File.WriteAllText(Path.Combine(SettingsStore.DirectoryPath, "last-error.txt"), DateTime.Now.ToString("s") + Environment.NewLine + ex); } catch { }
-            MessageBox.Show("O Screen Care precisou encerrar.\n\n" + ex.Message, "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Diagnostics.Error(ex);
+            MessageBox.Show(L10n.T("O Screen Care precisou encerrar.\n\n") + ex.Message, "Screen Care", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

@@ -207,7 +207,7 @@ namespace ScreenCare
     internal sealed class ThemeToggle : Toggle
     {
         private bool? clickedSide;
-        internal ThemeToggle() { AutoCheck = false; Size = new Size(156, 38); AccessibleName = "Tema escuro"; AccessibleDescription = "Ativado: dark. Desativado: light. Espaço alterna o tema."; }
+        internal ThemeToggle() { AutoCheck = false; Size = new Size(190, 38); AccessibleName = "Tema escuro"; AccessibleDescription = "Ativado: escuro. Desativado: claro. Espaço alterna o tema."; }
         protected override void OnMouseDown(MouseEventArgs e) { if (e.Button == MouseButtons.Left) clickedSide = e.X >= Width / 2; base.OnMouseDown(e); }
         protected override void OnMouseLeave(EventArgs e) { clickedSide = null; base.OnMouseLeave(e); }
         protected override void OnKeyDown(KeyEventArgs e) { clickedSide = null; base.OnKeyDown(e); }
@@ -224,7 +224,7 @@ namespace ScreenCare
                 Color fg = (Checked == (i == 1)) ? palette.Text : palette.Muted;
                 float x = i * half + 12 * s;
                 PaintUi.Glyph(e.Graphics, i == 0 ? "sun" : "moon", new RectangleF(x, (Height - 19 * s) / 2, 16 * s, 16 * s), fg, 1.6f);
-                PaintUi.Text(e.Graphics, i == 0 ? "Light" : "Dark", Font, fg, new Rectangle((int)(x + 21 * s), 0, (int)(half - 29 * s), Height - (int)(3 * s)), TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+                PaintUi.Text(e.Graphics, L10n.T(i == 0 ? "Claro" : "Escuro"), Font, fg, new Rectangle((int)(x + 21 * s), 0, (int)(half - 29 * s), Height - (int)(3 * s)), TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
             }
             if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -5, -5), palette.Accent, palette.Inset);
         }

@@ -15,7 +15,7 @@ namespace ScreenCare
                 try
                 {
                     if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
-                        throw new IOException("O destino contém um link de arquivo ou pasta. Escolha uma pasta local sem links.");
+                        throw new IOException(L10n.T("O destino contém um link de arquivo ou pasta. Escolha uma pasta local sem links."));
                 }
                 catch (FileNotFoundException) { }
                 catch (DirectoryNotFoundException) { }

@@ -20,6 +20,7 @@ namespace ScreenCare
         public bool Shuffle = true;
         public bool StartWithWindows = false;
         public Appearance Appearance = Appearance.Dark;
+        public Language Language = L10n.Detect(System.Globalization.CultureInfo.CurrentUICulture);
 
         public Settings Copy() { return (Settings)MemberwiseClone(); }
         public void Normalize()
@@ -29,6 +30,7 @@ namespace ScreenCare
             ImageFolder = ImageFolder ?? "";
             if (!Enum.IsDefined(typeof(IdleAction), Action)) Action = IdleAction.MonitorsOff;
             if (!Enum.IsDefined(typeof(Appearance), Appearance)) Appearance = Appearance.Dark;
+            if (!Enum.IsDefined(typeof(Language), Language)) Language = L10n.Detect(System.Globalization.CultureInfo.CurrentUICulture);
         }
     }
 

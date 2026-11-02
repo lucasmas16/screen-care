@@ -14,7 +14,7 @@ namespace ScreenCare
             { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff" };
         internal static List<string> Find(string folder, bool recursive, CancellationToken token)
         {
-            if (String.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) throw new IOException("A pasta de imagens não está disponível.");
+            if (String.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) throw new IOException(L10n.T("A pasta de imagens não está disponível."));
             var files = new List<string>();
             var pending = new Stack<string>();
             pending.Push(folder);
@@ -59,11 +59,11 @@ namespace ScreenCare
         internal static Bitmap Load(string path, Size target)
         {
             var info = new FileInfo(path);
-            if (info.Length > 64L * 1024 * 1024) throw new IOException("Imagem maior que 64 MB.");
+            if (info.Length > 64L * 1024 * 1024) throw new IOException(L10n.T("Imagem maior que 64 MB."));
             using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             using (var original = Image.FromStream(stream, false, false))
             {
-                if ((long)original.Width * original.Height > 40000000) throw new IOException("Imagem acima de 40 megapixels.");
+                if ((long)original.Width * original.Height > 40000000) throw new IOException(L10n.T("Imagem acima de 40 megapixels."));
                 try
                 {
                     if (Array.IndexOf(original.PropertyIdList, 0x0112) >= 0)

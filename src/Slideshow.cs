@@ -23,7 +23,7 @@ namespace ScreenCare
             DoubleBuffered = true;
             KeyPreview = true;
             AutoScaleMode = AutoScaleMode.None;
-            Text = "Screen Care — apresentação";
+            Text = L10n.T("Screen Care — apresentação");
         }
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -78,12 +78,12 @@ namespace ScreenCare
                     return found;
                 }, token);
                 if (disposed) return;
-                if (paths.Count == 0) { error("A pasta não contém imagens compatíveis. Escolha JPG, PNG, BMP, GIF ou TIFF."); return; }
+                if (paths.Count == 0) { error(L10n.T("A pasta não contém imagens compatíveis. Escolha JPG, PNG, BMP, GIF ou TIFF.")); return; }
                 loading = false;
                 LoadNext();
             }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { if (!disposed) error("Não foi possível abrir a pasta. " + ex.Message); }
+            catch (Exception ex) { if (!disposed) error(L10n.T("Não foi possível abrir a pasta. ") + ex.Message); }
             finally { if (disposed && cancellation != null) { cancellation.Dispose(); cancellation = null; } }
         }
         internal void Tick() { if (!disposed && !loading && paths != null && now() >= nextSlide) LoadNext(); }
@@ -111,7 +111,7 @@ namespace ScreenCare
                     return (Bitmap)null;
                 }, token);
                 if (disposed) { if (image != null) image.Dispose(); return; }
-                if (image == null) { error("Nenhuma imagem pôde ser aberta. Verifique os arquivos da pasta."); return; }
+                if (image == null) { error(L10n.T("Nenhuma imagem pôde ser aberta. Verifique os arquivos da pasta.")); return; }
                 Bitmap previous = current; current = image;
                 foreach (SlideWindow window in windows)
                 {
@@ -124,7 +124,7 @@ namespace ScreenCare
                 nextSlide = now() + settings.SlideSeconds;
             }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { if (!disposed) error("Não foi possível exibir as imagens. " + ex.Message); }
+            catch (Exception ex) { if (!disposed) error(L10n.T("Não foi possível exibir as imagens. ") + ex.Message); }
             finally
             {
                 loading = false;

@@ -39,7 +39,7 @@ namespace ScreenCare
         internal StatusToast(bool? enabled, string text, Appearance appearance)
         {
             MonitoringEnabled = enabled; message = text; palette = new Palette(appearance);
-            Text = "Screen Care · " + (enabled.HasValue ? enabled.Value ? "Ativado" : "Desativado" : "Aviso");
+            Text = "Screen Care · " + (enabled.HasValue ? enabled.Value ? L10n.T("Ativado") : L10n.T("Desativado") : L10n.T("Aviso"));
             AccessibleName = enabled.HasValue ? TrayApplication.StatusNotification(enabled.Value) : text;
             FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
             StartPosition = FormStartPosition.Manual; AutoScaleMode = AutoScaleMode.Dpi;
@@ -94,10 +94,10 @@ namespace ScreenCare
             using (var hint = new Font("Segoe UI", 9, FontStyle.Regular))
             {
                 PaintUi.Text(g, "Screen Care", title, palette.Muted, new Rectangle((int)(120*s), (int)(20*s), Width-(int)(138*s), (int)(22*s)), TextFormatFlags.SingleLine);
-                PaintUi.Text(g, MonitoringEnabled.HasValue ? MonitoringEnabled.Value ? "Ativado" : "Desativado" : message,
+                PaintUi.Text(g, MonitoringEnabled.HasValue ? MonitoringEnabled.Value ? L10n.T("Ativado") : L10n.T("Desativado") : message,
                     body, MonitoringEnabled.HasValue ? accent : palette.Text,
                     new Rectangle((int)(120*s), (int)(44*s), Width-(int)(138*s), (int)((MonitoringEnabled.HasValue ? 36 : 70)*s)), TextFormatFlags.WordBreak);
-                if (MonitoringEnabled.HasValue) PaintUi.Text(g, "Ctrl+Alt+F12 para alternar", hint, palette.Muted,
+                if (MonitoringEnabled.HasValue) PaintUi.Text(g, L10n.T("Ctrl+Alt+F12 para alternar"), hint, palette.Muted,
                     new Rectangle((int)(120*s), (int)(91*s), Width-(int)(138*s), (int)(22*s)), TextFormatFlags.SingleLine);
             }
         }

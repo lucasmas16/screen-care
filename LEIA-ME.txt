@@ -1,4 +1,4 @@
-SCREEN CARE 1.5.1 — Windows 10/11, x64
+SCREEN CARE 1.5.4 — Windows 10/11, x64
 
 ENGLISH — Portuguese instructions follow below.
 
@@ -17,10 +17,13 @@ Requires Windows 10/11 x64 and .NET Framework 4.8+. Executables are not publishe
 
 TRAY AND SHORTCUTS
 Find the icon near the clock, possibly inside the hidden-icons arrow. Double-click for settings.
-Right-click to pause automation, start the selected action, turn off displays or exit.
+Right-click to pause automation, turn off displays or exit.
 Ctrl+Alt+F11: turn off displays after two seconds, even with slideshow selected or automation paused.
 This manual action preserves your saved preferences. Repeating the shortcut restarts the countdown.
 Ctrl+Alt+F12: enable/pause automation. This also cancels a pending manual countdown.
+The three-second alert stays above borderless fullscreen windows without taking focus or intercepting clicks.
+True exclusive fullscreen may prevent desktop overlays; use borderless mode when alerts are needed.
+Repeated recoverable errors pause automation and keep the tray available. Fatal or external termination remains possible.
 If a shortcut is owned by another app, use the tray menu; Screen Care reports the conflict and stays open.
 Closing settings keeps the app running. Save settings applies pending edits.
 
@@ -84,18 +87,21 @@ MIT. See LICENSE. The portable package and installer both include the license.
 
 --------------------------------------------------------------------------
 
-SCREEN CARE 1.5.1 — Windows 10/11, x64
+SCREEN CARE 1.5.4 — Windows 10/11, x64
 
 PORTUGUÊS (BRASIL)
 
 INSTALAR
 Abra ScreenCare-Setup.exe e clique em Instalar e abrir.
 O aplicativo fica na área de notificação, perto do relógio (talvez dentro da seta ^).
-Clique duas vezes no ícone para configurar; botão direito para pausar, iniciar agora ou sair.
+Clique duas vezes no ícone para configurar; botão direito para pausar, desligar telas ou sair.
 Use Ctrl+Alt+F11 para desligar os monitores em 2 segundos, mesmo com slideshow selecionado ou automação pausada.
 A opção também está no menu do ícone. Ela não muda suas preferências salvas.
 Use Ctrl+Alt+F12 em qualquer aplicativo para ativar ou desativar o monitoramento. Uma notificação confirma o novo estado.
 O aviso aparece por 3 segundos no centro inferior do monitor principal, sem tirar o foco.
+O alerta mantém a posição sobre tela cheia sem bordas e deixa os cliques passarem para o aplicativo.
+Tela cheia exclusiva real pode impedir a sobreposição; nesse caso, use o modo sem bordas para ver o aviso.
+Erros recuperáveis repetidos pausam a automação e mantêm o ícone disponível; falhas fatais e encerramentos externos continuam possíveis.
 O monitor com confirmação representa ativado; o monitor com pausa representa desativado.
 Alternar novamente substitui o aviso anterior imediatamente e reinicia os 3 segundos.
 Fechar a janela de configurações mantém o aplicativo em execução. Clique em Salvar para aplicar alterações.

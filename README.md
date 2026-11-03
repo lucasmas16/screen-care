@@ -18,7 +18,24 @@ Get the [installer or portable version from Releases](https://github.com/lucasma
 
 Requires Windows 10/11 x64 and .NET Framework 4.8 or later. Executables do not yet have an Authenticode publisher signature.
 
-## What's new in 1.5.1
+## What's new in 1.5.4
+
+The caption below “Start with Windows” now sizes to its text instead of being clipped by a fixed-height container. The settings card can grow and remains scrollable in smaller windows. Checked in English/Portuguese, light/dark themes and with enlarged text. See [1.5.4 validation](docs/VALIDACAO-1.5.4.md).
+
+## Previous changes in 1.5.3
+
+Simplified tray menu: removed “Start now”. Manual display-off remains available through “Turn off displays in 2 seconds” and Ctrl+Alt+F11.
+
+Includes the fullscreen-alert and recovery improvements below. See [1.5.3 validation and limits](docs/VALIDACAO-1.5.3.md).
+
+## Previous changes in 1.5.2
+
+- Status alerts refresh their position above other windows for three seconds without activating, intercepting clicks or requiring a click to return to the foreground application. Tested over a separate process with a borderless fullscreen window.
+- True exclusive fullscreen can prevent ordinary window overlays. Use borderless fullscreen in those games when alerts are needed. No game injection or automatic game configuration changes are performed.
+- Repeated operational errors pause automation while keeping the application open. Notification creation failures are isolated, and recovery removes failing UI before refreshing the tray. Fatal process errors and Windows-initiated termination remain possible.
+- [1.5.2 validation and exit-path review](docs/VALIDACAO-1.5.2.md).
+
+## Previous changes in 1.5.1
 
 - **English and Portuguese:** choose the language in settings or the installer. It applies and saves immediately without discarding pending edits. On first use, Portuguese Windows locales select Portuguese; other locales select English.
 - **Ctrl+Alt+F11:** turn off displays after two seconds, even when slideshow mode is selected or automation is paused. The tray menu offers the same action. **Ctrl+Alt+F12** still toggles automation and cancels a pending manual countdown.

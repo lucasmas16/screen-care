@@ -12,7 +12,24 @@ Projeto de código aberto para Windows, distribuído sob a licença MIT.
 
 Baixe o [instalador ou a versão portátil na página de releases](https://github.com/lucasmas16/screen-care/releases/latest). Os pacotes incluem a licença e o manual; a lista `SHA256SUMS.txt` permite conferir a integridade dos arquivos. O aplicativo ainda não possui assinatura digital de editor.
 
-## Novidades da versão 1.5.1
+## Novidades da versão 1.5.4
+
+A legenda abaixo de “Iniciar com o Windows” agora ajusta sua altura ao texto, evitando cortes. O painel pode crescer e continua acessível por rolagem em janelas menores. Verificado nos dois idiomas, temas e com texto ampliado. Consulte a [validação da 1.5.4](docs/VALIDACAO-1.5.4.md).
+
+## Histórico da versão 1.5.3
+
+Menu simplificado: removido “Iniciar agora”. A ação manual permanece em “Desligar telas em 2 segundos”, com o atalho Ctrl+Alt+F11.
+
+Inclui as melhorias de alerta e recuperação descritas abaixo. Consulte a [validação e os limites da 1.5.3](docs/VALIDACAO-1.5.3.md).
+
+## Histórico da versão 1.5.2
+
+- O alerta de ativado/desativado reforça sua posição sobre outras janelas durante os três segundos de exibição, sem ativar a janela, capturar cliques ou exigir novo clique para retornar ao aplicativo. Validado com uma janela sem bordas em tela cheia em outro processo.
+- Tela cheia exclusiva real pode impedir sobreposições de janelas comuns. Para jogos nesse modo, use tela cheia sem bordas se precisar do alerta. Não há injeção no jogo nem mudança automática de suas configurações.
+- Erros operacionais repetidos passam a pausar a automação mantendo o programa aberto. Falhas ao criar avisos são isoladas; a recuperação remove janelas com falha antes de atualizar o ícone. Falhas fatais do processo e encerramentos pelo Windows continuam possíveis.
+- [Validação e revisão de encerramentos da 1.5.2](docs/VALIDACAO-1.5.2.md).
+
+## Histórico da versão 1.5.1
 
 O desligamento manual por Ctrl+Alt+F11 mantém somente o computador acordado para permitir reprodução em segundo plano, até uma entrada ou cancelamento. O desligamento automático libera o pedido de manter o sistema acordado. Suspensão manual e ações críticas do Windows continuam tendo prioridade.
 

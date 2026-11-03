@@ -16,6 +16,37 @@ namespace ScreenCare
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
         [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr process);
+        [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+        [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint from, uint to, bool attach);
+        [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point point);
+        [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+        private sealed class FullscreenTarget : Form
+        {
+            internal const int Promote = 0x8000 + 88;
+            internal int Frames { get; private set; }
+            private readonly System.Windows.Forms.Timer animation = new System.Windows.Forms.Timer { Interval = 30 };
+            internal FullscreenTarget()
+            {
+                Text = "Screen Care fullscreen test"; FormBorderStyle = FormBorderStyle.None;
+                StartPosition = FormStartPosition.Manual; Bounds = Screen.PrimaryScreen.Bounds;
+                TopMost = true; BackColor = Color.MidnightBlue;
+                animation.Tick += delegate { ++Frames; Invalidate(); };
+                animation.Start();
+            }
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                e.Graphics.FillRectangle(Brushes.CornflowerBlue, Frames % Math.Max(1, Width - 100), 40, 100, 50);
+            }
+            protected override void WndProc(ref Message m)
+            {
+                if (m.Msg == Promote) { Native.SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x13); return; }
+                base.WndProc(ref m);
+            }
+            protected override void Dispose(bool disposing) { if (disposing) animation.Dispose(); base.Dispose(disposing); }
+        }
         private static int passed;
         private static readonly List<string> results = new List<string>();
         private static void Check(bool condition, string name)
@@ -44,6 +75,16 @@ namespace ScreenCare
                 catch (Exception ex) { Console.Error.WriteLine(ex.GetType().Name); return 1; }
             }
             Native.EnableDpi(); Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+            if (args.Length == 2 && args[0] == "--fullscreen-target")
+            {
+                using (var target = new FullscreenTarget())
+                {
+                    target.Shown += delegate { File.WriteAllText(args[1], target.Handle.ToInt64().ToString()); };
+                    Application.Run(target);
+                    File.WriteAllText(args[1] + ".frames", target.Frames.ToString());
+                }
+                return 0;
+            }
             if (args.Length == 1 && args[0] == "--controllers")
             { Console.WriteLine(GamepadMonitor.DescribeConnected()); return 0; }
             if (args.Length == 2 && args[0] == "--dualsense-probe")
@@ -67,7 +108,7 @@ namespace ScreenCare
             L10n.Current = Language.Portuguese;
             try
             {
-                TestIdle(); TestPowerGuard(); TestGamepads(); TestSession(); TestPaint(); TestMouse(); TestSettings(root); TestSetupFiles(root); TestImages(root); TestWindows(root); TestToasts(root); TestLocalization(root); TestLifetime(root);
+                TestIdle(); TestPowerGuard(); TestGamepads(); TestSession(); TestPaint(); TestMouse(); TestSettings(root); TestSetupFiles(root); TestImages(root); TestWindows(root); TestStartupLayout(root); TestToasts(root); TestFullscreenToast(root); TestLocalization(root); TestLifetime(root);
                 results.Add(passed + " checks passed.");
                 File.WriteAllLines(Path.Combine(root, "results.txt"), results);
                 Console.WriteLine(String.Join(Environment.NewLine, results));
@@ -229,6 +270,7 @@ namespace ScreenCare
                 Pump(1600);
                 Check(host.Current != null && host.Current.Visible, "old alert deadline cannot close replacement alert");
                 Pump(1500); Check(host.Current == null, "replacement closes after its own full duration");
+                foreground = GetForegroundWindow(); // The user may switch apps during the expiration waits above.
                 for (int i = 0; i < 12; i++) { var old = host.Current; host.ShowStatus(i % 2 == 0, Appearance.Light); if (old != null) Check(old.IsDisposed, "rapid toggle removes old toast " + i); }
                 Check(host.Current.MonitoringEnabled == false && GetForegroundWindow() == foreground, "rapid toggles display only final state without focus change");
                 using (var bitmap = new Bitmap(host.Current.Width, host.Current.Height))
@@ -236,6 +278,115 @@ namespace ScreenCare
                 host.Hide(); Check(host.Current == null, "power-off dismisses pending notification");
             }
             Check(StatusToast.Position(new Rectangle(-1920, -200, 1920, 1040), new Size(420, 132), 20) == new Point(-1170, 688), "toast positioning supports negative monitor coordinates");
+        }
+        private static void TestFullscreenToast(string root)
+        {
+            string ready = Path.Combine(root, "fullscreen-" + Guid.NewGuid().ToString("N"));
+            using (var child = Process.Start(new ProcessStartInfo(Application.ExecutablePath, "--fullscreen-target \"" + ready + "\"") { UseShellExecute = false, CreateNoWindow = true }))
+            {
+                IntPtr target = IntPtr.Zero;
+                try
+                {
+                    var wait = Stopwatch.StartNew();
+                    while (!File.Exists(ready) && !child.HasExited && wait.ElapsedMilliseconds < 5000) Pump(50);
+                    Check(File.Exists(ready), "separate fullscreen process started");
+                    target = new IntPtr(Int64.Parse(File.ReadAllText(ready))); Pump(200);
+                    // Test setup only: emulate switching to the game before showing any toast.
+                    uint currentThread = GetCurrentThreadId();
+                    uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
+                    bool attached = currentThread != foregroundThread && AttachThreadInput(currentThread, foregroundThread, true);
+                    uint targetThread = GetWindowThreadProcessId(target, IntPtr.Zero);
+                    bool targetAttached = targetThread != currentThread && AttachThreadInput(currentThread, targetThread, true);
+                    bool activated;
+                    try { activated = SetForegroundWindow(target); }
+                    finally {
+                        if (targetAttached) AttachThreadInput(currentThread, targetThread, false);
+                        if (attached) AttachThreadInput(currentThread, foregroundThread, false);
+                    }
+                    Pump(100);
+                    Check(GetForegroundWindow() == target, "fullscreen process owns foreground before overlay test (activated=" + activated + ", attached=" + attached + "/" + targetAttached + ", foreground=" + GetForegroundWindow() + ", target=" + target + ")");
+                    using (var host = new StatusToastHost())
+                    {
+                        host.ShowStatus(true, Appearance.Dark); Pump(200);
+                        var toast = host.Current;
+                        long styles = GetWindowLongPtr(toast.Handle, -20).ToInt64();
+                        Check((styles & 0x080800A0) == 0x080800A0, "toast uses no-activate toolwindow and layered mouse pass-through styles");
+                        Point inside = new Point(toast.Left + toast.Width / 2, toast.Top + toast.Height / 2);
+                        Check(WindowFromPoint(inside) == target, "mouse hit-test passes through visible toast to another process");
+                        Check(GetForegroundWindow() == target, "showing toast preserves fullscreen foreground");
+                        Native.PostMessage(target, FullscreenTarget.Promote, IntPtr.Zero, IntPtr.Zero);
+                        Pump(350);
+                        bool above = false;
+                        for (IntPtr window = GetWindow(target, 3); window != IntPtr.Zero; window = GetWindow(window, 3))
+                            if (window == toast.Handle) { above = true; break; }
+                        Check(above, "toast regains z-order over competing topmost fullscreen window");
+                        Check(GetForegroundWindow() == target, "z-order refresh preserves fullscreen foreground");
+                        using (var bitmap = new Bitmap(toast.Width, toast.Height))
+                        using (var graphics = Graphics.FromImage(bitmap))
+                        {
+                            graphics.CopyFromScreen(toast.Location, Point.Empty, toast.Size);
+                            bitmap.Save(Path.Combine(root, "toast-over-fullscreen.png"));
+                            Check(bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2).ToArgb() != Color.MidnightBlue.ToArgb(), "desktop capture contains overlay over fullscreen surface");
+                        }
+                        for (int i = 0; i < 8; i++)
+                        {
+                            host.ShowStatus(i % 2 == 0, Appearance.Dark); Pump(40);
+                            Check(GetForegroundWindow() == target, "fullscreen focus survives rapid status replacement " + i);
+                        }
+                        Pump(StatusToast.Duration + 200);
+                        Check(host.Current == null && GetForegroundWindow() == target, "expiration leaves fullscreen process focused without another click");
+                    }
+                }
+                finally
+                {
+                    if (target != IntPtr.Zero) Native.PostMessage(target, 0x0010, IntPtr.Zero, IntPtr.Zero);
+                    if (!child.WaitForExit(5000)) { child.Kill(); child.WaitForExit(); }
+                }
+                Check(child.ExitCode == 0 && Int32.Parse(File.ReadAllText(ready + ".frames")) > 30, "fullscreen animation continues while alerts are displayed");
+            }
+        }
+        private static void TestStartupLayout(string root)
+        {
+            foreach (Language language in new[] { Language.English, Language.Portuguese })
+            foreach (Appearance appearance in new[] { Appearance.Dark, Appearance.Light })
+            using (var form = new SettingsForm(new Settings { Enabled = false, Language = language, Appearance = appearance }))
+            {
+                string name = language + "-" + appearance;
+                Render(form, Path.Combine(root, "startup-" + name + ".png"));
+                var toggle = Find<Toggle>(form, L10n.Get("Iniciar com o Windows", language));
+                var row = toggle.Parent;
+                var labels = (TableLayoutPanel)row.Controls[0];
+                var title = (Label)labels.Controls[0];
+                var caption = (Label)labels.Controls[1];
+                Check(caption.Text == L10n.Get("Retomar as últimas configurações", language), "startup caption preserved in " + name);
+                AssertCaptionFits(caption, name);
+                using (var titleFont = new Font(title.Font.FontFamily, 16, title.Font.Style))
+                using (var captionFont = new Font(caption.Font.FontFamily, 14, caption.Font.Style))
+                {
+                    title.Font = titleFont; caption.Font = captionFont;
+                    form.Size = form.MinimumSize;
+                    Render(form, Path.Combine(root, "startup-large-text-" + name + ".png"));
+                    AssertCaptionFits(caption, "large text / minimum window " + name);
+                    using (var bitmap = new Bitmap(row.Width, row.Height))
+                    { row.DrawToBitmap(bitmap, row.ClientRectangle); bitmap.Save(Path.Combine(root, "startup-caption-" + name + ".png")); }
+                }
+            }
+            L10n.Current = Language.Portuguese;
+        }
+        private static void AssertCaptionFits(Label caption, string context)
+        {
+            Size required = caption.GetPreferredSize(new Size(caption.Width, 0));
+            Check(caption.Height >= required.Height, "startup caption text height fits: " + context);
+            Rectangle visible = caption.ClientRectangle;
+            Control child = caption;
+            while (child.Parent != null && !(child.Parent is Form))
+            {
+                visible.Offset(child.Left, child.Top);
+                Control parent = child.Parent;
+                if (parent is ScrollableControl && ((ScrollableControl)parent).AutoScroll) break;
+                Check(parent.ClientRectangle.Contains(visible), "startup caption fits ancestor " + parent.GetType().Name + ": " + context);
+                child = parent;
+            }
         }
         private static void TestMouse()
         {
@@ -541,7 +692,17 @@ namespace ScreenCare
                 Check(tray.Visible && tray.ContextMenuStrip.Items[3].Text == "Settings…", "English tray remains visible after settings closure");
                 Check(app.TryRecover(new IOException("synthetic failure")), "recoverable UI error pauses automation instead of exiting");
                 Check(tray.Visible && !((System.Windows.Forms.Timer)type.GetField("timer", flags).GetValue(app)).Enabled, "recovery keeps tray visible and stops failing timer");
-                Check(!app.TryRecover(new IOException("repeated synthetic failure")), "repeated error is not swallowed in a retry loop");
+                open.Invoke(app, null);
+                var failedForm = (Form)type.GetField("form", flags).GetValue(app);
+                Check(app.TryRecover(new IOException("repeated synthetic failure")), "repeated operational error keeps process alive");
+                Check(failedForm.IsDisposed && type.GetField("form", flags).GetValue(app) == null, "recovery disposes failing settings UI");
+                var notifications = (StatusToastHost)type.GetField("notifications", flags).GetValue(app);
+                Check(notifications.Current == null, "repeated recovery removes old notification without creating an error loop");
+                Check(app.TryRecover(new UnauthorizedAccessException()) && app.TryRecover(new ArgumentException()) && app.TryRecover(new System.Security.SecurityException()), "permission and UI argument errors remain recoverable");
+                Check(tray.Visible && !(bool)type.GetField("exiting", flags).GetValue(app), "successive recoverable failures preserve tray and application lifetime");
+                open.Invoke(app, null);
+                Check(type.GetField("form", flags).GetValue(app) != null, "settings can reopen after repeated recovery");
+                Check(!app.TryRecover(new SEHException()), "native process corruption is not swallowed");
                 Check(!app.TryRecover(new OutOfMemoryException()), "fatal resource errors are not treated as recoverable");
                 app.Shutdown(); app.Shutdown();
                 Check(!tray.Visible, "repeated shutdown safely disposes the tray");
@@ -553,7 +714,8 @@ namespace ScreenCare
                 // Exercise the real timer path but block its queued native power command.
                 input.AllowMonitorOff = delegate { return false; };
                 var manual = (DelayedAction)type.GetField("manual", flags).GetValue(app);
-                manual.Schedule(-3, true); type.GetMethod("Tick", flags).Invoke(app, null); Application.DoEvents();
+                // Assert synchronous activation before live desktop input can cancel it.
+                manual.Schedule(-3, true); type.GetMethod("Tick", flags).Invoke(app, null);
                 Check((IdleAction)type.GetProperty("EffectiveAction", flags).GetValue(app, null) == IdleAction.MonitorsOff, "manual F11 action overrides slideshow even with automation paused");
                 var settings = (Settings)type.GetField("settings", flags).GetValue(app);
                 Check(!settings.Enabled && settings.Action == IdleAction.Slideshow, "manual monitor-off preserves configured mode and automation preference");
@@ -562,6 +724,7 @@ namespace ScreenCare
                 Check((uint)type.GetField("powerFlags", flags).GetValue(app) == 0x80000000u, "ending manual monitor-off releases its system-only power request");
                 Check((IdleAction)type.GetProperty("EffectiveAction", flags).GetValue(app, null) == IdleAction.Slideshow, "user activity restores configured mode after manual power-off");
                 Check(!((MonitorPowerGuard)type.GetField("powerGuard", flags).GetValue(app)).Armed, "user activity cancels monitor guard in running app");
+                Application.DoEvents();
             }
             Diagnostics.Error(new InvalidOperationException("synthetic diagnostic"));
             string error = File.ReadAllText(Path.Combine(Diagnostics.DirectoryPath, "last-error.txt"));

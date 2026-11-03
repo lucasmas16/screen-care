@@ -25,6 +25,7 @@ namespace ScreenCare
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
+            catch (System.Security.SecurityException) { }
         }
         internal static void Error(Exception exception)
         {
@@ -38,6 +39,7 @@ namespace ScreenCare
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
+            catch (System.Security.SecurityException) { }
             Event("error-recorded");
         }
     }

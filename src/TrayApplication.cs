@@ -52,19 +52,16 @@ namespace ScreenCare
             input.ShowRequested += OpenSettings;
             input.ExitRequested += delegate { Diagnostics.Event("exit-request"); Shutdown(); };
             input.ToggleRequested += delegate { Toggle(true); };
-            input.MonitorOffRequested += delegate { ScheduleAction(true); };
+            input.MonitorOffRequested += ScheduleMonitorOff;
             var menu = new ContextMenuStrip();
             var heading = new ToolStripMenuItem("Screen Care") { Enabled = false };
             menu.Items.Add(heading); menu.Items.Add(new ToolStripSeparator());
             toggle = new ToolStripMenuItem { ShortcutKeyDisplayString = "Ctrl+Alt+F12" };
             toggle.Click += delegate { Toggle(true); }; menu.Items.Add(toggle);
             var configure = new ToolStripMenuItem("Configurações…") { Tag = "Configurações…" }; configure.Click += delegate { OpenSettings(); }; menu.Items.Add(configure);
-            var now = new ToolStripMenuItem("Iniciar agora (em 2 segundos)") { Tag = "Iniciar agora (em 2 segundos)" };
-            now.Click += delegate { ScheduleAction(false); };
-            menu.Items.Add(now);
             var off = new ToolStripMenuItem { Tag = "Desligar telas em 2 segundos", ShortcutKeyDisplayString = "Ctrl+Alt+F11" };
-            off.Click += delegate { ScheduleAction(true); }; menu.Items.Add(off); menu.Items.Add(new ToolStripSeparator());
-            var quit = new ToolStripMenuItem("Sair") { Tag = "Sair" }; quit.Click += delegate { Shutdown(); }; menu.Items.Add(quit);
+            off.Click += delegate { ScheduleMonitorOff(); }; menu.Items.Add(off); menu.Items.Add(new ToolStripSeparator());
+            var quit = new ToolStripMenuItem("Sair") { Tag = "Sair" }; quit.Click += delegate { Diagnostics.Event("exit-menu"); Shutdown(); }; menu.Items.Add(quit);
             tray = new NotifyIcon { Icon = Theme.MakeIcon(), ContextMenuStrip = menu, Visible = true };
             tray.DoubleClick += delegate { OpenSettings(); };
             timer = new Timer { Interval = 100 };
@@ -72,7 +69,11 @@ namespace ScreenCare
             UpdateTray(); UpdatePower(); timer.Start();
             if (!input.HotKeyRegistered) Notify(L10n.T("O atalho global Ctrl+Alt+F12 não pôde ser registrado. Ele pode estar em uso por outro aplicativo."));
             if (!input.MonitorOffHotKeyRegistered) Notify(L10n.T("O atalho Ctrl+Alt+F11 está em uso. Use o menu para desligar as telas."));
-            if (showSettings) OpenSettings();
+            if (showSettings)
+            {
+                try { OpenSettings(); }
+                catch (Exception error) { Diagnostics.Error(error); if (!TryRecover(error)) throw; }
+            }
         }
 
         private void OnInput()
@@ -86,11 +87,11 @@ namespace ScreenCare
         }
         private void Reset()
         { manual.Cancel(); powerGuard.Reset(); forceMonitorsOff = false; StopSlides(); idle.Reset(Now); }
-        private void ScheduleAction(bool monitorsOnly)
+        private void ScheduleMonitorOff()
         {
             if (form != null) form.Close();
-            Reset(); manual.Schedule(Now, monitorsOnly);
-            Notify(L10n.T(monitorsOnly ? "As telas serão desligadas em 2 segundos." : "A ação começará em 2 segundos. Use teclado ou mouse depois para retornar."));
+            Reset(); manual.Schedule(Now, true);
+            Notify(L10n.T("As telas serão desligadas em 2 segundos."));
         }
         private void Tick()
         {
@@ -134,7 +135,7 @@ namespace ScreenCare
             if (!Native.PostMessage(input.Handle, InputWindow.MonitorOffMessage, IntPtr.Zero, IntPtr.Zero))
                 ActionFailed(L10n.T("O Windows não aceitou o pedido para desligar os monitores."));
         }
-        private void StopSlides() { if (slides != null) { slides.Dispose(); slides = null; } }
+        private void StopSlides() { var old = slides; slides = null; if (old != null) old.Dispose(); }
         private void SetPower(uint flags)
         {
             if (powerFlags != flags && Native.SetThreadExecutionState(flags) != 0)
@@ -178,15 +179,23 @@ namespace ScreenCare
         }
         internal bool TryRecover(Exception error)
         {
-            if (exiting || Now - lastRecovery < 60 || !(error is System.IO.IOException || error is System.Runtime.InteropServices.ExternalException || error is InvalidOperationException)) return false;
+            if (exiting || !Recovery.CanHandle(error)) return false;
+            bool showNotice = Now - lastRecovery >= 60;
             lastRecovery = Now;
             try
             {
                 timer.Stop(); settings = settings.Copy(); settings.Enabled = false;
-                Reset(); UpdatePower(); UpdateTray();
-                if (form != null) form.SetEnabled(false);
+                manual.Cancel(); powerGuard.Reset(); forceMonitorsOff = false; idle.Reset(Now);
+                // Remove failing UI/timers before doing optional presentation work.
+                Recovery.Attempt(StopSlides);
+                Recovery.Attempt(notifications.Hide);
+                var failedForm = form; form = null;
+                if (failedForm != null) Recovery.Attempt(failedForm.Dispose);
+                Recovery.Attempt(UpdatePower);
+                Recovery.Attempt(UpdateTray);
                 Diagnostics.Event("automation-paused-after-error");
-                Notify(L10n.T("A automação foi pausada após um erro. O app continua aberto. Revise as configurações e ative novamente."));
+                // Throttle notifications, not recovery: a second operational error is no reason to exit.
+                if (showNotice) Recovery.Attempt(delegate { Notify(L10n.T("A automação foi pausada após um erro. O app continua aberto. Revise as configurações e ative novamente.")); });
                 return true;
             }
             catch (Exception recoveryError) { Diagnostics.Error(recoveryError); return false; }
@@ -227,13 +236,21 @@ namespace ScreenCare
             if (exiting) return;
             exiting = true;
             Diagnostics.Event("shutdown");
-            timer.Stop(); timer.Dispose();
-            StopSlides();
-            notifications.Dispose();
-            if (form != null) form.Close();
-            SetPower(0x80000000);
-            tray.Visible = false; tray.Icon.Dispose(); tray.ContextMenuStrip.Dispose(); tray.Dispose();
-            input.Dispose(); ExitThread();
+            try
+            {
+                Recovery.Attempt(timer.Dispose);
+                Recovery.Attempt(StopSlides);
+                Recovery.Attempt(notifications.Dispose);
+                var oldForm = form; form = null;
+                if (oldForm != null) Recovery.Attempt(oldForm.Dispose);
+                Recovery.Attempt(delegate { SetPower(0x80000000); });
+                Recovery.Attempt(delegate { tray.Visible = false; });
+                Recovery.Attempt(tray.Icon.Dispose);
+                Recovery.Attempt(tray.ContextMenuStrip.Dispose);
+                Recovery.Attempt(tray.Dispose);
+                Recovery.Attempt(input.Dispose);
+            }
+            finally { ExitThread(); }
         }
         protected override void Dispose(bool disposing) { if (disposing) Shutdown(); base.Dispose(disposing); }
     }

@@ -1,6 +1,9 @@
 using System;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace ScreenCare
@@ -9,19 +12,28 @@ namespace ScreenCare
     {
         internal StatusToast Current { get; private set; }
         internal void ShowStatus(bool enabled, Appearance appearance)
-        { Replace(new StatusToast(enabled, null, appearance)); }
+        { Show(delegate { return new StatusToast(enabled, null, appearance); }); }
         internal void ShowMessage(string message, Appearance appearance)
-        { Replace(new StatusToast(null, message, appearance)); }
-        private void Replace(StatusToast next)
+        { Show(delegate { return new StatusToast(null, message, appearance); }); }
+        private void Show(Func<StatusToast> create)
         {
-            Hide(); Current = next;
-            next.FormClosed += delegate { if (ReferenceEquals(Current, next)) Current = null; };
-            next.Show();
+            // A notification failure must not terminate monitoring or undo a saved toggle.
+            try
+            {
+                Hide(); var next = create(); Current = next;
+                next.FormClosed += delegate { if (ReferenceEquals(Current, next)) Current = null; };
+                next.Show();
+            }
+            catch (Exception error)
+            {
+                if (!Recovery.CanHandle(error)) throw;
+                Diagnostics.Error(error); Hide();
+            }
         }
         internal void Hide()
         {
             var old = Current; Current = null;
-            if (old != null) { old.Close(); old.Dispose(); }
+            if (old != null) Recovery.Attempt(delegate { old.Dispose(); });
         }
         public void Dispose() { Hide(); }
     }
@@ -33,9 +45,13 @@ namespace ScreenCare
         private readonly string message;
         private readonly Palette palette;
         private readonly Timer timer;
+        private readonly Stopwatch lifetime = new Stopwatch();
+        private const int NoActivate = 0x08000000, ToolWindow = 0x80, Layered = 0x80000, Transparent = 0x20;
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint color, byte alpha, uint flags);
         protected override bool ShowWithoutActivation { get { return true; } }
         protected override CreateParams CreateParams
-        { get { var cp = base.CreateParams; cp.ExStyle |= 0x08000000 | 0x80; return cp; } }
+        { get { var cp = base.CreateParams; cp.ExStyle |= NoActivate | ToolWindow | Layered | Transparent; return cp; } }
         internal StatusToast(bool? enabled, string text, Appearance appearance)
         {
             MonitoringEnabled = enabled; message = text; palette = new Palette(appearance);
@@ -45,8 +61,29 @@ namespace ScreenCare
             StartPosition = FormStartPosition.Manual; AutoScaleMode = AutoScaleMode.Dpi;
             AutoScaleDimensions = new SizeF(96, 96); ClientSize = new Size(420, 132);
             BackColor = palette.Surface; DoubleBuffered = true;
-            timer = new Timer { Interval = Duration };
-            timer.Tick += delegate { timer.Stop(); Close(); };
+            timer = new Timer { Interval = 100 };
+            timer.Tick += delegate {
+                if (lifetime.ElapsedMilliseconds >= Duration) { timer.Stop(); Close(); }
+                else KeepAbove();
+            };
+        }
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // Layered + transparent passes mouse input through even to another process.
+            // Fully opaque alpha keeps the existing appearance.
+            if (!SetLayeredWindowAttributes(Handle, 0, 255, 2)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == 0x0021) { m.Result = new IntPtr(3); return; } // MA_NOACTIVATE
+            if (m.Msg == 0x0084) { m.Result = new IntPtr(-1); return; } // HTTRANSPARENT
+            base.WndProc(ref m);
+        }
+        private void KeepAbove()
+        {
+            // Reassert z-order while visible; never activate, focus, or alter the foreground app.
+            Native.SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
         }
         internal static Point Position(Rectangle area, Size size, int margin)
         { return new Point(area.Left + (area.Width - size.Width) / 2, area.Bottom - size.Height - margin); }
@@ -66,8 +103,8 @@ namespace ScreenCare
             float scale = PaintUi.Scale(this);
             ClientSize = new Size(Math.Min((int)(420 * scale), area.Width - 24), Math.Min((int)(132 * scale), area.Height - 24));
             Location = Position(area, Size, (int)(20 * scale)); Shape();
-            Native.SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040);
-            Update(); timer.Start();
+            KeepAbove();
+            Update(); lifetime.Restart(); timer.Start();
         }
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -101,6 +138,6 @@ namespace ScreenCare
                     new Rectangle((int)(120*s), (int)(91*s), Width-(int)(138*s), (int)(22*s)), TextFormatFlags.SingleLine);
             }
         }
-        protected override void Dispose(bool disposing) { if (disposing) timer.Dispose(); base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing && timer != null) timer.Dispose(); base.Dispose(disposing); }
     }
 }

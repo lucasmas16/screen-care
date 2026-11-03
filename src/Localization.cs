@@ -100,8 +100,6 @@ namespace ScreenCare
             { "Claro", "Light" }, { "Escuro", "Dark" },
             { "Diminuir: ", "Decrease: " }, { "Aumentar: ", "Increase: " },
             { "Configurações…", "Settings…" },
-            { "Iniciar agora (em 2 segundos)", "Start now (in 2 seconds)" },
-            { "A ação começará em 2 segundos. Use teclado ou mouse depois para retornar.", "The action starts in 2 seconds. Use the keyboard or mouse to return." },
             { "Sair", "Exit" },
             { "O atalho global Ctrl+Alt+F12 não pôde ser registrado. Ele pode estar em uso por outro aplicativo.", "The Ctrl+Alt+F12 global shortcut could not be registered. Another app may be using it." },
             { "O Windows não aceitou o pedido para desligar os monitores.", "Windows did not accept the request to turn off the monitors." },

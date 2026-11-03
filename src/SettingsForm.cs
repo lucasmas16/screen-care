@@ -117,12 +117,12 @@ namespace ScreenCare
             header.Controls.Add(brand, 0, 0); header.Controls.Add(languagePicker, 1, 0); header.Controls.Add(themeToggle, 2, 0); root.Controls.Add(header, 0, 0);
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Color.Transparent, Padding = new Padding(24, 0, 24, 0), Margin = Padding.Empty };
             root.Controls.Add(scroll, 0, 1);
-            var columns = Table(2); columns.AutoSize = false; columns.Height = 570; columns.Dock = DockStyle.Top;
+            var columns = Table(2); columns.AutoSizeMode = AutoSizeMode.GrowAndShrink; columns.MinimumSize = new Size(0, 570); columns.Dock = DockStyle.Top;
             FillRow(columns);
             columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 31)); columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 69)); scroll.Controls.Add(columns);
             overview = new OverviewPanel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 16, 0), TabStop = false };
             columns.Controls.Add(overview, 0, 0);
-            var card = new GlassPanel { Dock = DockStyle.Fill, Padding = new Padding(22, 20, 24, 16), Margin = Padding.Empty }; columns.Controls.Add(card, 1, 0);
+            var card = new GlassPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill, Padding = new Padding(22, 20, 24, 16), Margin = Padding.Empty }; columns.Controls.Add(card, 1, 0);
             var body = Table(1); body.Dock = DockStyle.Top; card.Controls.Add(body);
             enabled = new Toggle { Checked = settings.Enabled, AccessibleName = "Ativar automação", TabIndex = 0 };
             body.Controls.Add(SettingRow("Automação", "Ativa após um período sem interação", enabled, 48)); body.Controls.Add(Gap(12));
@@ -199,12 +199,21 @@ namespace ScreenCare
         private static Control Gap(int height) { return new Panel { Height = height, Dock = DockStyle.Top, Margin = Padding.Empty, BackColor = Color.Transparent, TabStop = false }; }
         private static TableLayoutPanel SettingRow(string title, string description, Toggle toggle, int height)
         {
-            var row = Table(2); row.AutoSize = false; row.Dock = DockStyle.Top; row.Height = height;
+            var row = Table(2); row.AutoSizeMode = AutoSizeMode.GrowAndShrink; row.Dock = DockStyle.Top; row.MinimumSize = new Size(0, height);
             FillRow(row);
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 50));
-            var labels = Table(1); labels.Dock = DockStyle.Fill; labels.AutoSize = false;
+            var labels = Table(1); labels.Dock = DockStyle.Fill; labels.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            labels.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             var name = Label(title, 9.5f, true, false, description == null ? height : 24); name.Cursor = Cursors.Hand; name.Click += delegate { toggle.Checked = !toggle.Checked; };
-            labels.Controls.Add(name); if (description != null) labels.Controls.Add(Label(description, 8.5f, false, true, 21));
+            // Let text determine its height after DPI, font or language changes.
+            // Fixed-height nested tables could clip the startup caption to a thin line.
+            name.AutoSize = true; name.MinimumSize = new Size(0, description == null ? height : 24);
+            labels.Controls.Add(name);
+            if (description != null)
+            {
+                var caption = Label(description, 8.5f, false, true, 21);
+                caption.AutoSize = true; caption.MinimumSize = new Size(0, 21); labels.Controls.Add(caption);
+            }
             toggle.Anchor = AnchorStyles.Right; row.Controls.Add(labels, 0, 0); row.Controls.Add(toggle, 1, 0); return row;
         }
         private void SelectUnit(int index) { unitIndex = index; for (int i = 0; i < units.Length; i++) { units[i].Selected = i == index; units[i].Invalidate(); } UpdateOverview(); }

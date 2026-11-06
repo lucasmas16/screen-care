@@ -83,8 +83,12 @@ namespace ScreenCare
         {
             private readonly double[] rest = new double[6], range = new double[6];
             private readonly bool hasPov;
+            private readonly bool rawInputOnly;
             internal LegacyActivity(JoyCaps caps, JoyState first)
             {
+                // WinMM interprets enhanced Switch reports as the simple layout,
+                // turning counters/IMU bytes into held controls. Raw Input owns it.
+                rawInputOnly = SwitchInput.IsDevice(caps.Manufacturer, caps.Product);
                 uint[] min = caps.Minimum, max = caps.Maximum, axes = first.Axes;
                 hasPov = (caps.Caps & 16) != 0;
                 // DualSense / DualShock expose X,Y,Z,R sticks and U,V triggers via WinMM.
@@ -101,6 +105,7 @@ namespace ScreenCare
             }
             internal bool Observe(JoyState s)
             {
+                if (rawInputOnly) return false;
                 if (s.Buttons != 0 || (hasPov && s.Pov != 0xFFFF)) return true;
                 uint[] axes = s.Axes;
                 for (int a = 0; a < 6; a++)

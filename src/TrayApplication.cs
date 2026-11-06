@@ -12,7 +12,7 @@ namespace ScreenCare
         private readonly NotifyIcon tray;
         private readonly ToolStripMenuItem toggle;
         private readonly Timer timer;
-        private readonly GamepadMonitor gamepads = new GamepadMonitor();
+        private readonly GamepadProcess gamepads = new GamepadProcess();
         private readonly StatusToastHost notifications = new StatusToastHost();
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly IdleController idle;
@@ -96,7 +96,11 @@ namespace ScreenCare
         private void Tick()
         {
             if (exiting) return;
-            if (!session.Locked && !session.Suspended && !session.Disconnected && gamepads.Poll(Now)) OnInputFrom("gamepad");
+            if (!session.Locked && !session.Suspended && !session.Disconnected)
+            {
+                if (gamepads.Poll(Now)) OnInputFrom("gamepad");
+                if (input.SwitchHeld) OnInputFrom("switch-pro");
+            }
             if (session.Locked)
             {
                 uint time;
@@ -239,6 +243,7 @@ namespace ScreenCare
             try
             {
                 Recovery.Attempt(timer.Dispose);
+                Recovery.Attempt(gamepads.Dispose);
                 Recovery.Attempt(StopSlides);
                 Recovery.Attempt(notifications.Dispose);
                 var oldForm = form; form = null;

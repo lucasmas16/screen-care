@@ -78,11 +78,24 @@ namespace ScreenCare
         internal int HotKeyRegistrationError { get; private set; }
         private IntPtr rawBuffer, powerNotification;
         private uint rawCapacity = 256;
-        private readonly Dictionary<IntPtr, bool> dualSenseDevices = new Dictionary<IntPtr, bool>();
+        private readonly Dictionary<IntPtr, int> controllerDevices = new Dictionary<IntPtr, int>();
+        private readonly Dictionary<IntPtr, SwitchActivity> switchStates = new Dictionary<IntPtr, SwitchActivity>();
+        internal bool SwitchHeld
+        {
+            get
+            {
+                uint now = unchecked((uint)Environment.TickCount);
+                foreach (var state in switchStates.Values) if (state.IsActive(now)) return true;
+                return false;
+            }
+        }
         private uint lastGamepadActivity;
         internal int DualSenseReports { get; private set; }
         internal int DualSenseActivityReports { get; private set; }
         internal string DualSenseReportFormat { get; private set; }
+        internal int SwitchReports { get; private set; }
+        internal int SwitchActivityReports { get; private set; }
+        internal string SwitchReportFormat { get; private set; }
         private readonly uint headerSize = (uint)(8 + 2 * IntPtr.Size);
         private bool registered;
         private bool haveAbsoluteMouse;
@@ -136,13 +149,16 @@ namespace ScreenCare
             uint read = Native.GetRawInputData(handle, 0x10000003, rawBuffer, ref size, headerSize);
             if (read == UInt32.MaxValue || read < headerSize + 8) return;
             int type = Marshal.ReadInt32(rawBuffer);
+            string controllerSource = null;
             bool activity = type == 1 && read >= headerSize + 16
                 && KeyboardIsActivity((ushort)Marshal.ReadInt16(rawBuffer, (int)headerSize),
                     (ushort)Marshal.ReadInt16(rawBuffer, (int)headerSize + 6));
             if (type == 2)
             {
                 IntPtr device = Marshal.ReadIntPtr(rawBuffer, 8);
-                if (!IsDualSense(device)) return;
+                int controller = ControllerKind(device);
+                if (controller == 0) return;
+                controllerSource = controller == 1 ? "dualsense" : "switch-pro";
                 uint reportSize = (uint)Marshal.ReadInt32(rawBuffer, (int)headerSize);
                 uint count = (uint)Marshal.ReadInt32(rawBuffer, (int)headerSize + 4);
                 if (reportSize < 10 || reportSize > 512 || count > (read - headerSize - 8) / reportSize) return;
@@ -151,10 +167,18 @@ namespace ScreenCare
                 {
                     Marshal.Copy(IntPtr.Add(rawBuffer, (int)(headerSize + 8 + i * reportSize)), report, 0, report.Length);
                     bool active;
-                    if (DualSenseInput.TryActivity(report, out active))
+                    if (controller == 1 && DualSenseInput.TryActivity(report, out active))
                     {
                         DualSenseReports++; DualSenseReportFormat = "0x" + report[0].ToString("X2") + "/" + report.Length;
                         if (active) { DualSenseActivityReports++; activity = true; }
+                    }
+                    else if (controller == 2 && SwitchInput.TryActivity(report, out active))
+                    {
+                        SwitchActivity state;
+                        if (!switchStates.TryGetValue(device, out state)) switchStates[device] = state = new SwitchActivity();
+                        state.Observe(report[0], active, unchecked((uint)Environment.TickCount));
+                        SwitchReports++; SwitchReportFormat = "0x" + report[0].ToString("X2") + "/" + report.Length;
+                        if (active) { SwitchActivityReports++; activity = true; }
                     }
                 }
                 uint tick = unchecked((uint)Environment.TickCount);
@@ -170,24 +194,27 @@ namespace ScreenCare
             }
             if (activity && DirectInput != null)
             {
-                LastInputSource = type == 1 ? ((Marshal.ReadInt16(rawBuffer, (int)headerSize + 2) & 1) != 0 ? "keyboard-release" : "keyboard-press") : type == 2 ? "dualsense"
+                LastInputSource = type == 1 ? ((Marshal.ReadInt16(rawBuffer, (int)headerSize + 2) & 1) != 0 ? "keyboard-release" : "keyboard-press") : type == 2 ? controllerSource
                     : Marshal.ReadInt16(rawBuffer, (int)headerSize + 4) != 0 ? "mouse-button-wheel"
                     : (Marshal.ReadInt16(rawBuffer, (int)headerSize) & 1) != 0 ? "mouse-absolute" : "mouse-relative";
                 DirectInput();
             }
         }
-        private bool IsDualSense(IntPtr device)
+        private int ControllerKind(IntPtr device)
         {
-            bool found;
-            if (dualSenseDevices.TryGetValue(device, out found)) return found;
+            int found;
+            if (controllerDevices.TryGetValue(device, out found)) return found;
             IntPtr info = Marshal.AllocHGlobal(32);
             try
             {
                 uint size = 32; Marshal.WriteInt32(info, 32);
-                found = Native.GetRawInputDeviceInfo(device, 0x2000000B, info, ref size) != UInt32.MaxValue
-                    && Marshal.ReadInt32(info, 4) == 2
-                    && DualSenseInput.IsDevice((uint)Marshal.ReadInt32(info, 8), (uint)Marshal.ReadInt32(info, 12));
-                dualSenseDevices[device] = found; return found;
+                found = 0;
+                if (Native.GetRawInputDeviceInfo(device, 0x2000000B, info, ref size) != UInt32.MaxValue && Marshal.ReadInt32(info, 4) == 2)
+                {
+                    uint vendor = (uint)Marshal.ReadInt32(info, 8), product = (uint)Marshal.ReadInt32(info, 12);
+                    found = DualSenseInput.IsDevice(vendor, product) ? 1 : SwitchInput.IsDevice(vendor, product) ? 2 : 0;
+                }
+                controllerDevices[device] = found; return found;
             }
             finally { Marshal.FreeHGlobal(info); }
         }
@@ -201,7 +228,8 @@ namespace ScreenCare
                 return;
             }
             if (m.Msg == Native.WM_INPUT) ReadInput(m.LParam);
-            else if (m.Msg == 0x00FE) dualSenseDevices.Remove(m.LParam); // arrival/removal: handles can be reused
+            else if (m.Msg == 0x00FE) // arrival/removal: handles can be reused
+            { controllerDevices.Remove(m.LParam); switchStates.Remove(m.LParam); }
             else if (m.Msg == Native.WM_HOTKEY && m.WParam.ToInt32() == ToggleHotKeyId)
             { if (ToggleRequested != null) ToggleRequested(); }
             else if (m.Msg == Native.WM_HOTKEY && m.WParam.ToInt32() == MonitorOffHotKeyId)

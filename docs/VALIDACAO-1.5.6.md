@@ -1,0 +1,14 @@
+# Validação 1.5.6
+
+- A imagem de texto cortado correspondia à instalação 1.5.3. A correção de altura automática entrou na 1.5.4 e permanece nesta versão.
+- Dispositivo real exposto como Switch Pro 057E:2009; usuário informa conexão Bluetooth. Antes da correção, WinMM marcou atividade em 135 de 136 consultas, com dados variáveis indevidos.
+- Após leitura dos campos corretos, primeira amostra parada: 1.120 relatórios, zero ativos. Amostra com comandos solicitados ao usuário: 1.126 relatórios, 316 ativos. Após soltar: 1.120 relatórios, zero ativos. Formato observado: 0x30/64. Os resultados comprovam esse dispositivo/formato, não todos os adaptadores ou controles compatíveis.
+- Windows Error Reporting registrou APPCRASH 0xc0000374 (corrupção de heap) em instalações 1.5.0, 1.5.3 e 1.5.5. Pilhas de dois dumps contêm WinMM/DirectInput na rota da falha. O endereço que originalmente corrompeu a memória não foi estabelecido apenas por essas pilhas.
+- Análise adicional com o depurador Microsoft e símbolos oficiais classificou a falha como `HEAP_CORRUPTION_ACTIONABLE_BufferOverrun_c0000374_dinput.dll!ReallocCbPpv`, passando por `DIHid_BuildHidListEntry`, `DIHid_BuildHidList` e `winmm!joyGetPosEx`. Isso identifica a rota nativa do encerramento; não identifica qual dispositivo/driver iniciou a corrupção.
+- A 1.5.6 isola a consulta XInput/WinMM em processo auxiliar. Testes cobrem recepção de atividade, término inesperado, limpeza de estado, reinício com espera, expiração de sinal e encerramento do auxiliar junto ao app. Não tenta recuperar execução dentro de um heap corrompido.
+- 1.290 verificações automatizadas aprovadas, incluindo controles, layout em dois idiomas/temas, fontes ampliadas, alertas sem foco e ciclo de vida. Resultados e diagnósticos do equipamento ficam nos artefatos locais ignorados pelo Git.
+- Instalação 1.5.6 conferida por versão e SHA-256 contra a compilação; configurações preservadas byte a byte. O processo principal não carregou XInput/WinMM/DirectInput; somente o auxiliar carregou essas bibliotecas. Ao terminar deliberadamente apenas o auxiliar, o principal permaneceu vivo e responsivo e criou um auxiliar novo após a espera prevista.
+- O usuário confirmou visualmente que “Restore your last settings” aparece inteiro na janela instalada da 1.5.6. A captura automática ficou obstruída por outra janela; a renderização dos testes também mostra a legenda completa.
+- Testes de segurança aprovados; verificação de privacidade: 50 arquivos, nenhum achado. O ZIP portátil foi comparado por hash à compilação.
+
+Limites: o isolamento contém falhas do auxiliar, não garante ausência de falhas fatais em outros componentes. Jogos em tela cheia exclusiva, remapeadores que escondem o HID e particularidades de monitores/docks continuam exigindo verificação física.

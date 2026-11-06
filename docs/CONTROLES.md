@@ -1,4 +1,14 @@
-# Entrada de controles e energia — versão 1.4
+# Entrada de controles e energia
+
+## Switch Pro e isolamento de drivers (1.5.6)
+
+O Switch Pro identificado como 057E:2009 usa Raw Input nos formatos simples 0x3F e aprimorados 0x30/0x31/0x21. Somente botões, direcional e analógicos fora da zona neutra contam. Bateria, sequência, vibração e IMU não contam. O app não altera o modo do controle nem envia comandos. Referência de campos: [driver Switch do SDL](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_switch.c). A identificação do dispositivo não comprova o transporte físico: adaptadores podem expor um controle Bluetooth como USB.
+
+A leitura WinMM do Switch Pro é desconsiderada: em modo aprimorado, ela pode interpretar bytes de sensores/contadores como botões e eixos. Os comandos reais continuam sendo lidos por Raw Input. Relatórios simples mantêm comandos pressionados até soltura/desconexão; o estado de relatórios contínuos expira em um segundo sem atualização. Centros nominais e zonas neutras são usados; o app não solicita calibração da memória do controle.
+
+XInput/WinMM agora executam em um processo auxiliar do próprio ScreenCare.exe, sem janela. O processo principal recebe apenas ativo/inativo. Se o auxiliar encerrar, ele é reiniciado após cinco segundos; dados sem atualização deixam de contar após dois segundos, e um auxiliar sem resposta por dez segundos é encerrado e recriado. Fechar o app encerra seu auxiliar. O auxiliar também acompanha a saída do processo principal. Raw Input de teclado, mouse, DualSense e Switch permanece no processo principal.
+
+Essa separação contém falhas nativas de drivers legados: corrupção de heap não é uma exceção gerenciada recuperável e não deve ser ignorada dentro de um processo já corrompido. Durante a reinicialização do auxiliar, controles disponíveis apenas por XInput/WinMM ficam temporariamente sem detecção; teclado, mouse e os controles Raw Input continuam disponíveis.
 
 O DualSense conectado por Bluetooth pode não aparecer corretamente nas APIs de joystick antigas. O app registra Raw Input para gamepads/joysticks em segundo plano e identifica Sony 054C:0CE6 (DualSense) e 054C:0DF2 (Edge). Lê os campos de controles dos relatórios USB, Bluetooth simples e Bluetooth aprimorado. Não abre o dispositivo de forma exclusiva, não envia comandos, não altera LEDs/vibração e não registra os comandos em arquivos. Contadores, giroscópio, acelerômetro e bateria são ignorados.
 

@@ -18,7 +18,11 @@ Get the [installer or portable version from Releases](https://github.com/lucasma
 
 Requires Windows 10/11 x64 and .NET Framework 4.8 or later. Executables do not yet have an Authenticode publisher signature.
 
-## What's new in 1.5.4
+## What's new in 1.5.6
+
+Switch Pro input now uses the actual button/stick fields, ignoring counters and sensors that WinMM can misread as continuous activity. Legacy controller polling runs in a supervised helper process so a native driver failure does not terminate the tray app. Tested with the connected controller and an intentional helper termination on the installed build. See [validation and limits](docs/VALIDACAO-1.5.6.md).
+
+## Previous changes in 1.5.4
 
 The caption below “Start with Windows” now sizes to its text instead of being clipped by a fixed-height container. The settings card can grow and remains scrollable in smaller windows. Checked in English/Portuguese, light/dark themes and with enlarged text. See [1.5.4 validation](docs/VALIDACAO-1.5.4.md).
 

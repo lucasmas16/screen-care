@@ -1,4 +1,4 @@
-SCREEN CARE 1.5.4 — Windows 10/11, x64
+SCREEN CARE 1.5.6 — Windows 10/11, x64
 
 ENGLISH — Portuguese instructions follow below.
 
@@ -87,7 +87,7 @@ MIT. See LICENSE. The portable package and installer both include the license.
 
 --------------------------------------------------------------------------
 
-SCREEN CARE 1.5.4 — Windows 10/11, x64
+SCREEN CARE 1.5.6 — Windows 10/11, x64
 
 PORTUGUÊS (BRASIL)
 

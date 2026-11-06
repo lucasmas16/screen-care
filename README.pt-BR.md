@@ -12,7 +12,11 @@ Projeto de código aberto para Windows, distribuído sob a licença MIT.
 
 Baixe o [instalador ou a versão portátil na página de releases](https://github.com/lucasmas16/screen-care/releases/latest). Os pacotes incluem a licença e o manual; a lista `SHA256SUMS.txt` permite conferir a integridade dos arquivos. O aplicativo ainda não possui assinatura digital de editor.
 
-## Novidades da versão 1.5.4
+## Novidades da versão 1.5.6
+
+O Switch Pro usa os campos corretos de botões e analógicos, ignorando contadores e sensores que a leitura WinMM podia interpretar como atividade contínua. A consulta de controles legados agora roda em um processo auxiliar supervisionado, para que uma falha nativa nessa consulta não encerre o app da bandeja. Validado com o controle conectado e com interrupção deliberada do auxiliar na versão instalada. Consulte a [validação e os limites](docs/VALIDACAO-1.5.6.md).
+
+## Mudanças anteriores da versão 1.5.4
 
 A legenda abaixo de “Iniciar com o Windows” agora ajusta sua altura ao texto, evitando cortes. O painel pode crescer e continua acessível por rolagem em janelas menores. Verificado nos dois idiomas, temas e com texto ampliado. Consulte a [validação da 1.5.4](docs/VALIDACAO-1.5.4.md).
 

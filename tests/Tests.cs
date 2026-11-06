@@ -54,6 +54,13 @@ namespace ScreenCare
         [STAThread]
         internal static int Main(string[] args)
         {
+            if (args.Length == 2 && args[0] == "--gamepad-worker") return GamepadProcess.RunWorker(args[1]);
+            if (args.Length == 2 && args[0] == "--worker-fixture")
+            {
+                Console.WriteLine("1"); Console.Out.Flush();
+                Thread.Sleep(args[1] == "exit" ? 300 : 30000);
+                return 77;
+            }
             if (args.Length == 2 && args[0] == "--check-path")
             {
                 try { SetupProgram.ValidatePaths(args[1], args[1]); return 0; }
@@ -87,6 +94,20 @@ namespace ScreenCare
             }
             if (args.Length == 1 && args[0] == "--controllers")
             { Console.WriteLine(GamepadMonitor.DescribeConnected()); return 0; }
+            if (args.Length == 2 && args[0] == "--switch-probe")
+            {
+                using (var input = new InputWindow())
+                {
+                    var monitor = new GamepadMonitor(); var clock = Stopwatch.StartNew();
+                    int polls = 0, activePolls = 0;
+                    while (clock.ElapsedMilliseconds < 15000)
+                    { if (monitor.Poll(clock.Elapsed.TotalSeconds)) activePolls++; polls++; Pump(100); }
+                    string report = "Switch reports=" + input.SwitchReports + "; active reports=" + input.SwitchActivityReports
+                        + "; format=" + input.SwitchReportFormat + "; legacy/XInput active polls=" + activePolls + "/" + polls;
+                    File.WriteAllText(args[1], report); Console.WriteLine(report);
+                    return input.SwitchReports > 0 ? 0 : 1;
+                }
+            }
             if (args.Length == 2 && args[0] == "--dualsense-probe")
             {
                 using (var input = new InputWindow())
@@ -242,6 +263,80 @@ namespace ScreenCare
             Check(tracker.Observe(dpad), "DualSense held directional pad counts");
             caps.Caps = 0; var basic = new GamepadMonitor.LegacyActivity(caps, neutral);
             Check(!basic.Observe(dpad), "unavailable POV and optional axes are ignored");
+            TestSwitch();
+            TestGamepadProcess();
+        }
+        private static void TestGamepadProcess()
+        {
+            var clock = Stopwatch.StartNew();
+            using (var worker = new GamepadProcess(delegate { return new ProcessStartInfo(Application.ExecutablePath, "--worker-fixture exit"); }))
+            {
+                bool sawActive = false;
+                while (clock.ElapsedMilliseconds < 1500) { sawActive |= worker.Poll(clock.Elapsed.TotalSeconds); Thread.Sleep(10); }
+                Check(sawActive, "isolated controller state reaches parent");
+                Check(!worker.Poll(clock.Elapsed.TotalSeconds) && worker.ChildId == 0, "controller worker exit clears stale input and preserves parent");
+                worker.Poll(20);
+                Check(worker.ChildId != 0, "controller worker restarts after backoff");
+            }
+            using (var worker = new GamepadProcess(delegate { return new ProcessStartInfo(Application.ExecutablePath, "--worker-fixture hang"); }))
+            {
+                clock.Restart(); bool sawActive = false;
+                while (clock.ElapsedMilliseconds < 2500) { sawActive |= worker.Poll(clock.Elapsed.TotalSeconds); Thread.Sleep(10); }
+                Check(sawActive && !worker.Poll(3), "stopped controller heartbeat cannot hold display awake");
+                int id = worker.ChildId;
+                worker.Dispose();
+                bool ended;
+                try { using (var p = Process.GetProcessById(id)) ended = p.HasExited; } catch (ArgumentException) { ended = true; }
+                Check(ended && !worker.Poll(30), "shutdown terminates owned controller worker without restart");
+            }
+        }
+        private static void TestSwitch()
+        {
+            Check(SwitchInput.IsDevice(0x057E, 0x2009) && !SwitchInput.IsDevice(0x054C, 0x2009)
+                && !SwitchInput.IsDevice(0x057E, 0x2006), "Switch Pro selection is limited to supported IDs");
+            bool active;
+            Check(!SwitchInput.TryActivity(null, out active) && !SwitchInput.TryActivity(new byte[11], out active), "Switch truncated reports rejected");
+            foreach (byte id in new byte[] { 0x30, 0x31, 0x21 })
+            {
+                var report = new byte[64]; report[0] = id;
+                report[7] = report[10] = 8;
+                report[8] = report[11] = 128;
+                for (int i = 0; i < 256; i++)
+                {
+                    report[1] = (byte)i; report[2] = (byte)i;
+                    for (int j = 12; j < report.Length; j++) report[j] = (byte)(i + j);
+                    Check(SwitchInput.TryActivity(report, out active) && !active, "Switch counter/battery/IMU ignored " + id + "/" + i);
+                }
+                for (int field = 3; field <= 5; field++)
+                {
+                    report[field] = 1;
+                    Check(SwitchInput.TryActivity(report, out active) && active, "Switch button/dpad held " + id + "/" + field);
+                    report[field] = 0;
+                }
+                report[6] = 255; report[7] = 15;
+                Check(SwitchInput.TryActivity(report, out active) && active, "Switch held analog " + id);
+                Check(!SwitchInput.TryActivity(new byte[] { id }, out active), "Switch short header rejected " + id);
+            }
+            var simple = new byte[12]; simple[0] = 0x3F; simple[3] = 8;
+            for (int i = 5; i < 12; i += 2) simple[i] = 128;
+            Check(SwitchInput.TryActivity(simple, out active) && !active, "Switch simple neutral");
+            simple[1] = 128; Check(SwitchInput.TryActivity(simple, out active) && active, "Switch simple trigger");
+            simple[1] = 0; simple[3] = 0; Check(SwitchInput.TryActivity(simple, out active) && active, "Switch simple directional pad");
+            simple[3] = 8; simple[5] = 255; Check(SwitchInput.TryActivity(simple, out active) && active, "Switch simple analog");
+            simple[0] = 0x81; Check(!SwitchInput.TryActivity(simple, out active), "Switch USB status is not input");
+            var caps = new GamepadMonitor.JoyCaps { Manufacturer = 0x057E, Product = 0x2009 };
+            var bogus = GamepadMonitor.NewJoyState(); bogus.Buttons = 119231; bogus.Y = 12544; bogus.R = 59347;
+            var tracker = new GamepadMonitor.LegacyActivity(caps, bogus);
+            var idle = new IdleController(0);
+            for (int t = 1; t <= 30; t++) if (tracker.Observe(bogus)) idle.Input(t);
+            Check(idle.TryActivate(30, 30, true, false), "Switch bogus WinMM data cannot prevent screen timeout");
+            var state = new SwitchActivity();
+            state.Observe(0x3F, true, 10);
+            Check(state.IsActive(60000), "Switch simple held command survives event-only reporting");
+            state.Observe(0x3F, false, 60001);
+            Check(!state.IsActive(60001), "Switch simple release clears held command");
+            state.Observe(0x30, true, UInt32.MaxValue - 10);
+            Check(state.IsActive(20) && !state.IsActive(1000), "Switch streaming state expires across tick wrap");
         }
         private static void Pump(int milliseconds)
         {

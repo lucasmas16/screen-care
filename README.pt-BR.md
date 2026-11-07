@@ -12,7 +12,11 @@ Projeto de código aberto para Windows, distribuído sob a licença MIT.
 
 Baixe o [instalador ou a versão portátil na página de releases](https://github.com/lucasmas16/screen-care/releases/latest). Os pacotes incluem a licença e o manual; a lista `SHA256SUMS.txt` permite conferir a integridade dos arquivos. O aplicativo ainda não possui assinatura digital de editor.
 
-## Novidades da versão 1.5.6
+## Novidades da versão 1.5.7
+
+Alguns drivers de controle fazem o Windows tratar um controle conectado e parado como presença do usuário. Com um DualSense por Bluetooth, o Windows reacendia as telas cerca de 20 ms após cada desligamento. Quando as telas reacendem durante o desligamento e o Screen Care não detectou teclado, mouse nem controle, todas as telas ficam cobertas de preto, sem roubar o foco, até haver entrada real; as tentativas de desligamento continuam. Em qualquer controle, comandos que permanecem exatamente iguais por 5 minutos deixam de contar como atividade. Na tela de bloqueio esse sinal do driver não se distingue de entrada real, então ela permanece acesa enquanto ele estiver ativo. Consulte a [validação e os limites](docs/VALIDACAO-1.5.7.md).
+
+## Mudanças anteriores da versão 1.5.6
 
 O Switch Pro usa os campos corretos de botões e analógicos, ignorando contadores e sensores que a leitura WinMM podia interpretar como atividade contínua. A consulta de controles legados agora roda em um processo auxiliar supervisionado, para que uma falha nativa nessa consulta não encerre o app da bandeja. Validado com o controle conectado e com interrupção deliberada do auxiliar na versão instalada. Consulte a [validação e os limites](docs/VALIDACAO-1.5.6.md).
 

@@ -18,7 +18,11 @@ Get the [installer or portable version from Releases](https://github.com/lucasma
 
 Requires Windows 10/11 x64 and .NET Framework 4.8 or later. Executables do not yet have an Authenticode publisher signature.
 
-## What's new in 1.5.6
+## What's new in 1.5.7
+
+Some controller drivers make Windows treat a connected, resting gamepad as user presence. With a Bluetooth DualSense, Windows turned the displays back on about 20 ms after each monitor-off. When displays wake while the monitor-off action is active and Screen Care detected no keyboard, mouse or controller input, every screen is now covered in black, without taking focus, until real input; monitor-off retries continue. On any controller, a set of engaged controls left exactly unchanged for 5 minutes stops counting as activity. On the lock screen the same driver signal cannot be told apart from real input, so the lock screen stays on while it is active. See [validation and limits](docs/VALIDACAO-1.5.7.md).
+
+## Previous changes in 1.5.6
 
 Switch Pro input now uses the actual button/stick fields, ignoring counters and sensors that WinMM can misread as continuous activity. Legacy controller polling runs in a supervised helper process so a native driver failure does not terminate the tray app. Tested with the connected controller and an intentional helper termination on the installed build. See [validation and limits](docs/VALIDACAO-1.5.6.md).
 

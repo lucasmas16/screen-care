@@ -1,4 +1,4 @@
-SCREEN CARE 1.5.6 — Windows 10/11, x64
+SCREEN CARE 1.5.7 — Windows 10/11, x64
 
 ENGLISH — Portuguese instructions follow below.
 
@@ -40,10 +40,14 @@ ACTIVITY AND POWER
 Keyboard, mouse, touchpad and gamepad activity reset the timer, independently of video, music or CPU use.
 DualSense/Edge USB and Bluetooth, XInput/Steam Input and WinMM controllers are supported. Held buttons,
 triggers and sticks outside the dead zone count as activity; idle controllers and minor drift do not.
+Controls left exactly unchanged for 5 minutes stop counting (latched driver/report errors).
 Virtual devices that emulate physical input may be indistinguishable from real activity.
 After display-off, input returns to normal monitoring. Without input, an unexpected display wake causes
 another monitor-off request after at least three seconds. Missing acknowledgement or persistent conflicts
 use delays of 5, 15, 30 and then 60 seconds. Confirmed display-off stops retrying; input cancels retries.
+If Windows turns the displays back on with no input detected (some controller drivers report a resting
+gamepad as user presence), all screens are covered in black, without taking focus, until real input.
+The cover is not possible on the lock screen: while such a driver is active, the lock screen stays on.
 Screen Care does not shut down the PC. It holds its own display/system stay-awake request during the
 configured wait and slideshow. Automatic monitor-off releases this request. Manual monitor-off
 (Ctrl+Alt+F11 or its menu action) keeps only the computer awake for background playback until input
@@ -87,7 +91,7 @@ MIT. See LICENSE. The portable package and installer both include the license.
 
 --------------------------------------------------------------------------
 
-SCREEN CARE 1.5.6 — Windows 10/11, x64
+SCREEN CARE 1.5.7 — Windows 10/11, x64
 
 PORTUGUÊS (BRASIL)
 
@@ -128,12 +132,16 @@ DualSense e DualSense Edge são lidos diretamente por USB e Bluetooth; controles
 Steam Input) e joysticks compatíveis com WinMM também são consultados. Botões, direcionais,
 gatilhos e analógicos fora da zona de repouso contam como atividade, mesmo mantidos pressionados.
 Controle conectado e parado não impede o descanso. Pequenas oscilações dos analógicos são ignoradas.
+Comandos que permanecem exatamente iguais por 5 minutos deixam de contar (falhas de driver/relatório).
 Teclado, mouse ou atividade do controle encerram o slideshow e reiniciam a contagem. Esc também encerra a apresentação.
 Desligar monitores não desliga o computador: o Windows pede economia de energia às telas conectadas.
 Mudanças de conexão causadas pelo descanso das telas não reativam a solicitação de mantê-las acesas.
 Se a tela reacender sem atividade, o app tenta desligá-la novamente. A confirmação de tela desligada
 interrompe as tentativas; sem confirmação, os intervalos crescem de 5 para 15, 30 e 60 segundos.
 Após um reacendimento, há pelo menos 3 segundos para processar entrada pendente.
+Se o Windows reacender as telas sem nenhuma entrada detectada (alguns drivers tratam um controle parado
+como presença do usuário), todas as telas ficam cobertas de preto, sem roubar o foco, até haver entrada real.
+Na tela de bloqueio a cobertura não é possível: com esse tipo de driver ativo, a tela de bloqueio fica acesa.
 Teclado, mouse, controle, pausa e mudanças de sessão cancelam as tentativas.
 O comportamento físico depende dos monitores, drivers e sessão; valide no seu equipamento.
 

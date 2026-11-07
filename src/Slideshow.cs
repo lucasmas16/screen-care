@@ -12,8 +12,13 @@ namespace ScreenCare
     {
         internal Bitmap Slide;
         internal event Action ExitSlide;
-        internal SlideWindow(Rectangle bounds)
+        // Passive windows never take focus: keystrokes keep reaching the
+        // application underneath, exactly as with monitors physically off.
+        private readonly bool passive;
+        internal SlideWindow(Rectangle bounds) : this(bounds, false) { }
+        internal SlideWindow(Rectangle bounds, bool passiveCover)
         {
+            passive = passiveCover;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             Bounds = bounds;
@@ -36,6 +41,51 @@ namespace ScreenCare
         }
         protected override void OnKeyDown(KeyEventArgs e)
         { if (e.KeyCode == Keys.Escape && ExitSlide != null) { e.Handled = true; ExitSlide(); } base.OnKeyDown(e); }
+        protected override bool ShowWithoutActivation { get { return passive; } }
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams value = base.CreateParams;
+                if (passive) value.ExStyle |= 0x08000000 | 0x80; // WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+                return value;
+            }
+        }
+        // Touch/pen are not registered as Raw Input; a tap on the cover is input.
+        protected override void OnMouseDown(MouseEventArgs e)
+        { base.OnMouseDown(e); if (passive && ExitSlide != null) ExitSlide(); }
+    }
+
+    // Shown when Windows turns the displays back on although Screen Care saw no
+    // keyboard, mouse or controller input (for example a driver that reports a
+    // resting gamepad as user presence). No static image stays on screen while
+    // monitor-off keeps being retried. Any detected input removes it.
+    internal sealed class Blackout : IDisposable
+    {
+        private readonly List<SlideWindow> windows = new List<SlideWindow>();
+        private bool cursorHidden;
+        internal Blackout(Action exit)
+        {
+            try
+            {
+                foreach (Screen screen in Screen.AllScreens)
+                {
+                    var window = new SlideWindow(screen.Bounds, true);
+                    window.ExitSlide += exit;
+                    windows.Add(window);
+                    window.Show();
+                }
+                Cursor.Hide(); cursorHidden = true;
+            }
+            catch { Dispose(); throw; }
+        }
+        internal int Count { get { return windows.Count; } }
+        public void Dispose()
+        {
+            foreach (SlideWindow window in windows) { window.Close(); window.Dispose(); }
+            windows.Clear();
+            if (cursorHidden) { Cursor.Show(); cursorHidden = false; }
+        }
     }
 
     internal sealed class Slideshow : IDisposable

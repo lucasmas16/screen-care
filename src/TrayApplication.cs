@@ -18,6 +18,7 @@ namespace ScreenCare
         private readonly IdleController idle;
         private SettingsForm form;
         private Slideshow slides;
+        private Blackout blackout;
         private readonly SessionState session = new SessionState();
         private bool exiting;
         private readonly DelayedAction manual = new DelayedAction();
@@ -39,6 +40,9 @@ namespace ScreenCare
             input.DisplayChanged += delegate(bool on) {
                 if (powerGuard.DisplayOn != on) Diagnostics.Event(on ? "display-on" : "display-off");
                 powerGuard.Observe(on, Now);
+                // Real input ends the action (and disarms the guard) before Windows
+                // reports the display on. Still armed means nothing we detect woke it.
+                if (on && powerGuard.Armed) CoverScreens();
             };
             input.SessionChanged += delegate(int reason) {
                 if (session.Change(reason)) { Reset(); uint time; if (Native.TryLastInput(out time)) session.ObserveInput(time); UpdatePower(); }
@@ -139,7 +143,23 @@ namespace ScreenCare
             if (!Native.PostMessage(input.Handle, InputWindow.MonitorOffMessage, IntPtr.Zero, IntPtr.Zero))
                 ActionFailed(L10n.T("O Windows não aceitou o pedido para desligar os monitores."));
         }
-        private void StopSlides() { var old = slides; slides = null; if (old != null) old.Dispose(); }
+        private void CoverScreens()
+        {
+            if (exiting || blackout != null || slides != null || !CanTurnOff || !Native.InteractiveDesktop()) return;
+            Diagnostics.Event("display-woke-without-input");
+            try { blackout = new Blackout(delegate { OnInputFrom("cover-pointer"); }); }
+            catch (Exception error)
+            {
+                if (!Recovery.CanHandle(error)) throw;
+                Diagnostics.Event("cover-failed");
+            }
+        }
+        // Ends every screen presentation: slideshow and the black cover.
+        private void StopSlides()
+        {
+            var old = slides; slides = null; if (old != null) old.Dispose();
+            var cover = blackout; blackout = null; if (cover != null) cover.Dispose();
+        }
         private void SetPower(uint flags)
         {
             if (powerFlags != flags && Native.SetThreadExecutionState(flags) != 0)

@@ -112,8 +112,12 @@ namespace ScreenCare
             {
                 using (var input = new InputWindow())
                 {
-                    Pump(15000);
-                    string report = "DualSense reports=" + input.DualSenseReports + "; active reports=" + input.DualSenseActivityReports + "; format=" + input.DualSenseReportFormat;
+                    var monitor = new GamepadMonitor(); var clock = Stopwatch.StartNew();
+                    int polls = 0, activePolls = 0;
+                    while (clock.ElapsedMilliseconds < 15000)
+                    { if (monitor.Poll(clock.Elapsed.TotalSeconds)) activePolls++; polls++; Pump(100); }
+                    string report = "DualSense reports=" + input.DualSenseReports + "; active reports=" + input.DualSenseActivityReports + "; format=" + input.DualSenseReportFormat
+                        + "; legacy/XInput active polls=" + activePolls + "/" + polls;
                     File.WriteAllText(args[1], report); Console.WriteLine(report);
                     return input.DualSenseReports > 0 ? 0 : 1;
                 }
@@ -227,6 +231,12 @@ namespace ScreenCare
                 Check(DualSenseInput.TryActivity(report, out active) && !active, "DualSense raw minor drift ignored " + format);
                 report[buttons] = 0;
                 Check(DualSenseInput.TryActivity(report, out active) && active, "DualSense raw held dpad " + format);
+                long dpadControls, buttonControls, leftControls, rightControls;
+                DualSenseInput.TryControls(report, out dpadControls);
+                report[buttons] = 0x28; DualSenseInput.TryControls(report, out buttonControls);
+                report[buttons] = 8; report[start] = 0; DualSenseInput.TryControls(report, out leftControls);
+                report[start] = 255; DualSenseInput.TryControls(report, out rightControls);
+                Check(dpadControls != buttonControls && leftControls != rightControls && leftControls != 0 && rightControls != 0, "DualSense distinct controls have distinct signatures " + format);
             }
             bool ignored;
             Check(!DualSenseInput.TryActivity(new byte[8], out ignored) && !DualSenseInput.TryActivity(new byte[64], out ignored), "short and unknown HID packets rejected");
@@ -263,8 +273,51 @@ namespace ScreenCare
             Check(tracker.Observe(dpad), "DualSense held directional pad counts");
             caps.Caps = 0; var basic = new GamepadMonitor.LegacyActivity(caps, neutral);
             Check(!basic.Observe(dpad), "unavailable POV and optional axes are ignored");
+            foreach (ushort product in new ushort[] { 0x0CE6, 0x0DF2 })
+            {
+                var sonyCaps = caps; sonyCaps.Manufacturer = 0x054C; sonyCaps.Product = product;
+                sonyCaps.Name = "Driver joystick PC da Microsoft"; sonyCaps.Caps = 63;
+                var startup = neutral; startup.U = startup.V = 32767;
+                var sony = new GamepadMonitor.LegacyActivity(sonyCaps, startup);
+                var quiet = new IdleController(0);
+                for (int t = 1; t <= 10; t++)
+                    if (sony.Observe(neutral)) quiet.Input(t);
+                Check(quiet.TryActivate(10, 10, true, false), "Sony localized WinMM initial trigger shift does not block idle " + product);
+                var bogus = neutral; bogus.Buttons = UInt32.MaxValue; bogus.X = 65535; bogus.Pov = 0;
+                Check(!sony.Observe(bogus), "Sony WinMM duplicate ignored; Raw Input owns real commands " + product);
+            }
+            TestStuckControls(caps, neutral);
             TestSwitch();
             TestGamepadProcess();
+        }
+        private static void TestStuckControls(GamepadMonitor.JoyCaps caps, GamepadMonitor.JoyState neutral)
+        {
+            uint limit = StuckFilter.LimitMs;
+            var filter = new StuckFilter();
+            Check(!filter.Observe(0, 0) && filter.Observe(5, 10) && filter.Observe(5, 10 + limit - 1), "held controls count until the stuck limit");
+            Check(!filter.Observe(5, 10 + limit) && !filter.IsActive(20 + limit), "identical engaged controls stop counting at the limit");
+            Check(filter.Observe(7, 30 + limit) && filter.Observe(5, 40 + limit), "any change in engaged controls counts again");
+            Check(!filter.Observe(0, 50 + limit) && filter.Observe(5, 60 + limit), "release and press again counts");
+            var wrap = new StuckFilter(); wrap.Observe(1, UInt32.MaxValue - 10);
+            Check(wrap.IsActive(100) && !wrap.IsActive(limit), "stuck limit is safe across tick wrap");
+            Check(GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = 30000 }) != GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = -30000 })
+                && GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { Buttons = 0x1000 }) != GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { RightTrigger = 200 }),
+                "Xbox distinct controls have distinct signatures");
+            var tracker = new GamepadMonitor.LegacyActivity(caps, neutral);
+            var left = neutral; left.X = 0; var right = neutral; right.X = 65535; var button = neutral; button.Buttons = 2;
+            Check(tracker.Controls(left) != tracker.Controls(right) && tracker.Controls(button) != tracker.Controls(left) && tracker.Controls(neutral) == 0, "WinMM distinct controls have distinct signatures");
+            // A latched control (any controller/driver) cannot block the action forever.
+            var latched = new StuckFilter(); var idle = new IdleController(0);
+            int seconds = 60; bool activated = false;
+            for (int t = 1; t <= limit / 1000 + seconds + 1 && !activated; t++)
+            {
+                if (latched.Observe(tracker.Controls(button), (uint)t * 1000)) idle.Input(t);
+                activated = idle.TryActivate(t, seconds, true, false);
+                if (t < limit / 1000) Check(!activated, "real long hold still delays the action " + t);
+            }
+            Check(activated, "latched controller no longer prevents monitor-off");
+            var simple = new SwitchActivity(); simple.Observe(0x3F, 4L, 10);
+            Check(simple.IsActive(9 + limit) && !simple.IsActive(10 + limit), "Switch event-only held command expires when frozen");
         }
         private static void TestGamepadProcess()
         {
@@ -337,6 +390,36 @@ namespace ScreenCare
             Check(!state.IsActive(60001), "Switch simple release clears held command");
             state.Observe(0x30, true, UInt32.MaxValue - 10);
             Check(state.IsActive(20) && !state.IsActive(1000), "Switch streaming state expires across tick wrap");
+        }
+        private static void TestCover()
+        {
+            var flags = BindingFlags.Instance | BindingFlags.NonPublic; var type = typeof(TrayApplication);
+            using (var app = new TrayApplication(new Settings { Enabled = false, Action = IdleAction.MonitorsOff, Language = Language.English }, false))
+            {
+                var input = (InputWindow)type.GetField("input", flags).GetValue(app);
+                input.AllowMonitorOff = delegate { return false; };
+                var displayChanged = (Action<bool>)typeof(InputWindow).GetField("DisplayChanged", flags).GetValue(input);
+                Func<Blackout> cover = delegate { return (Blackout)type.GetField("blackout", flags).GetValue(app); };
+                displayChanged(true);
+                Check(cover() == null, "display-on outside the monitor-off action never covers screens");
+                IntPtr foreground = GetForegroundWindow();
+                var manual = (DelayedAction)type.GetField("manual", flags).GetValue(app);
+                manual.Schedule(-3, true); type.GetMethod("Tick", flags).Invoke(app, null);
+                displayChanged(false); displayChanged(true);
+                if (Native.InteractiveDesktop())
+                {
+                    Check(cover() != null && cover().Count == Screen.AllScreens.Length, "display woken without detected input is covered on every screen");
+                    Check(GetForegroundWindow() == foreground, "black cover does not take focus");
+                    displayChanged(false); displayChanged(true);
+                    Check(cover() != null, "repeated phantom wake keeps one cover");
+                    Check(((MonitorPowerGuard)type.GetField("powerGuard", flags).GetValue(app)).Armed, "monitor-off keeps being retried under the cover");
+                }
+                type.GetMethod("OnInput", flags).Invoke(app, null);
+                Check(cover() == null, "detected input removes the black cover");
+                displayChanged(true);
+                Check(cover() == null, "display-on after real input is not covered");
+                Application.DoEvents();
+            }
         }
         private static void Pump(int milliseconds)
         {
@@ -821,6 +904,7 @@ namespace ScreenCare
                 Check(!((MonitorPowerGuard)type.GetField("powerGuard", flags).GetValue(app)).Armed, "user activity cancels monitor guard in running app");
                 Application.DoEvents();
             }
+            TestCover();
             Diagnostics.Error(new InvalidOperationException("synthetic diagnostic"));
             string error = File.ReadAllText(Path.Combine(Diagnostics.DirectoryPath, "last-error.txt"));
             Check(error.Contains("synthetic diagnostic"), "failure is recorded independently of shutdown");

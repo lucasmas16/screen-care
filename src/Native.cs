@@ -80,6 +80,7 @@ namespace ScreenCare
         private uint rawCapacity = 256;
         private readonly Dictionary<IntPtr, int> controllerDevices = new Dictionary<IntPtr, int>();
         private readonly Dictionary<IntPtr, SwitchActivity> switchStates = new Dictionary<IntPtr, SwitchActivity>();
+        private readonly Dictionary<IntPtr, StuckFilter> dualSenseStates = new Dictionary<IntPtr, StuckFilter>();
         internal bool SwitchHeld
         {
             get
@@ -163,25 +164,27 @@ namespace ScreenCare
                 uint count = (uint)Marshal.ReadInt32(rawBuffer, (int)headerSize + 4);
                 if (reportSize < 10 || reportSize > 512 || count > (read - headerSize - 8) / reportSize) return;
                 byte[] report = new byte[reportSize];
+                uint tick = unchecked((uint)Environment.TickCount);
                 for (uint i = 0; i < count; i++)
                 {
                     Marshal.Copy(IntPtr.Add(rawBuffer, (int)(headerSize + 8 + i * reportSize)), report, 0, report.Length);
-                    bool active;
-                    if (controller == 1 && DualSenseInput.TryActivity(report, out active))
+                    long controls;
+                    if (controller == 1 && DualSenseInput.TryControls(report, out controls))
                     {
+                        StuckFilter state;
+                        if (!dualSenseStates.TryGetValue(device, out state)) dualSenseStates[device] = state = new StuckFilter();
                         DualSenseReports++; DualSenseReportFormat = "0x" + report[0].ToString("X2") + "/" + report.Length;
-                        if (active) { DualSenseActivityReports++; activity = true; }
+                        if (state.Observe(controls, tick)) { DualSenseActivityReports++; activity = true; }
                     }
-                    else if (controller == 2 && SwitchInput.TryActivity(report, out active))
+                    else if (controller == 2 && SwitchInput.TryControls(report, out controls))
                     {
                         SwitchActivity state;
                         if (!switchStates.TryGetValue(device, out state)) switchStates[device] = state = new SwitchActivity();
-                        state.Observe(report[0], active, unchecked((uint)Environment.TickCount));
+                        state.Observe(report[0], controls, tick);
                         SwitchReports++; SwitchReportFormat = "0x" + report[0].ToString("X2") + "/" + report.Length;
-                        if (active) { SwitchActivityReports++; activity = true; }
+                        if (state.IsActive(tick)) { SwitchActivityReports++; activity = true; }
                     }
                 }
-                uint tick = unchecked((uint)Environment.TickCount);
                 if (activity && unchecked(tick - lastGamepadActivity) < 100) activity = false;
                 if (activity) lastGamepadActivity = tick;
             }
@@ -229,7 +232,7 @@ namespace ScreenCare
             }
             if (m.Msg == Native.WM_INPUT) ReadInput(m.LParam);
             else if (m.Msg == 0x00FE) // arrival/removal: handles can be reused
-            { controllerDevices.Remove(m.LParam); switchStates.Remove(m.LParam); }
+            { controllerDevices.Remove(m.LParam); switchStates.Remove(m.LParam); dualSenseStates.Remove(m.LParam); }
             else if (m.Msg == Native.WM_HOTKEY && m.WParam.ToInt32() == ToggleHotKeyId)
             { if (ToggleRequested != null) ToggleRequested(); }
             else if (m.Msg == Native.WM_HOTKEY && m.WParam.ToInt32() == MonitorOffHotKeyId)

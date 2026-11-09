@@ -15,8 +15,18 @@ namespace ScreenCare
         private Process child;
         private bool active, disposed;
         private long lastReport;
-        private double retryAt, startedAt;
-        internal const double RestartDelay = 5, StaleSeconds = 2, HangSeconds = 10;
+        private double retryAt, startedAt, lastPoll, graceUntil;
+        private int failures;
+        internal const double RestartDelay = 5, StaleSeconds = 2, HangSeconds = 10, HealthySeconds = 60;
+        // The worker leaves on its own when Windows has leaked too many handles
+        // into it (see SlotProbe); that is housekeeping, not a failure.
+        internal const int RecycleExitCode = 10;
+        internal const uint RecycleHandles = 20000;
+        internal double MinRecycleSeconds = 30;
+        // A worker that keeps dying is restarted less and less often: a crash loop
+        // would otherwise produce a Windows error report every five seconds.
+        internal static double Backoff(int consecutive)
+        { return consecutive <= 1 ? RestartDelay : consecutive == 2 ? 30 : consecutive == 3 ? 120 : 600; }
         internal int ChildId { get { return child == null ? 0 : child.Id; } }
 
         internal GamepadProcess() : this(delegate {
@@ -29,14 +39,22 @@ namespace ScreenCare
             if (disposed) return false;
             try
             {
+                // After a pause in polling (lock, sleep) old timestamps say nothing
+                // about the worker: give it time to report before calling it hung.
+                if (now - lastPoll > 3) graceUntil = now + HangSeconds;
+                lastPoll = now;
                 if (child != null)
                 {
                     double silence;
                     lock (gate) silence = lastReport == 0 ? now - startedAt : (Stopwatch.GetTimestamp() - lastReport) / (double)Stopwatch.Frequency;
-                    if (child.HasExited || silence >= HangSeconds)
+                    bool exited = child.HasExited;
+                    if (exited && child.ExitCode == RecycleExitCode && now - startedAt >= MinRecycleSeconds)
+                    { Diagnostics.Event("gamepad-worker-recycled"); StopChild(); failures = 0; retryAt = now; }
+                    else if (exited || (silence >= HangSeconds && now >= graceUntil))
                     {
-                        Diagnostics.Event(child.HasExited ? "gamepad-worker-exited" : "gamepad-worker-unresponsive");
-                        StopChild(); retryAt = now + RestartDelay;
+                        failures = now - startedAt >= HealthySeconds ? 1 : failures + 1;
+                        Diagnostics.Event(exited ? "gamepad-worker-exited" : "gamepad-worker-unresponsive");
+                        StopChild(); retryAt = now + Backoff(failures);
                     }
                 }
                 if (child == null && now >= retryAt)
@@ -62,7 +80,7 @@ namespace ScreenCare
             {
                 if (!Recovery.CanHandle(error)) throw;
                 Diagnostics.Event("gamepad-worker-start-or-read-failed");
-                StopChild(); retryAt = now + RestartDelay; return false;
+                StopChild(); retryAt = now + Backoff(++failures); return false;
             }
         }
         private void StopChild()
@@ -89,10 +107,15 @@ namespace ScreenCare
                 using (var parent = Process.GetProcessById(id))
                 {
                     var monitor = new GamepadMonitor(); var clock = Stopwatch.StartNew();
+                    double handleCheck = 60;
                     while (!parent.HasExited)
                     {
-                        Console.Out.WriteLine(monitor.Poll(clock.Elapsed.TotalSeconds) ? "1" : "0");
-                        Console.Out.Flush(); Thread.Sleep(100);
+                        double now = clock.Elapsed.TotalSeconds;
+                        Console.Out.WriteLine(monitor.Poll(now) ? "1" : "0");
+                        Console.Out.Flush();
+                        if (now >= handleCheck)
+                        { handleCheck = now + 60; if (GamepadMonitor.HandleCount() > RecycleHandles) return RecycleExitCode; }
+                        Thread.Sleep(100);
                     }
                 }
                 return 0;

@@ -1,5 +1,27 @@
 # Entrada de controles e energia
 
+## Revisão de robustez (1.5.8)
+
+**Vazamento de handles no auxiliar.** Cada consulta WinMM a um slot de joystick vazio faz o DirectInput reconstruir a lista de dispositivos, e o Windows vaza cerca de 20 handles de chaves de registro (`...\DirectInput\VID_xxxx&PID_xxxx\Calibration\0`) por reconstrução. O auxiliar consultava os slots vazios a cada 2 s: 1.474.862 handles após 47 h, 9,66 por segundo. `XInputGetState` e a leitura de slots presentes não vazam. Essa reconstrução (`DIHid_BuildHidList` via `joyGetPosEx`) é também a rota dos encerramentos por corrupção de heap anteriores à 1.5.6. Agora os slots vazios são consultados apenas por 6 s depois que o conjunto de dispositivos HID muda (`GetRawInputDeviceList`, que não vaza) e, como rede de segurança, uma vez a cada 5 minutos. O auxiliar confere seus handles a cada minuto e pede para ser substituído acima de 20.000; o processo principal o recria imediatamente. Medido no mesmo equipamento: 0 handles por segundo no auxiliar novo contra 9,66 no instalado.
+
+**Auxiliar que falha repetidamente.** O reinício passa de 5 s para 30 s, 2 min e 10 min enquanto as falhas se repetem, e volta a 5 s depois de 60 s de funcionamento. Evita um relatório de erro do Windows a cada cinco segundos. Após bloqueio ou suspensão, o auxiliar tem 10 s para voltar a reportar antes de ser considerado travado.
+
+**Analógicos gastos e leituras incorretas.** Um filtro único (`StuckFilter`) serve XInput, WinMM, DualSense e Switch Pro:
+
+- zonas mortas com histerese: aciona acima do limite e só libera 25% abaixo dele, então o ruído na borda não alterna o comando;
+- botões e direcional (digitais) sempre contam ao mudar;
+- uma posição analógica só renova a contagem se durar 150 ms; picos de uma leitura não contam;
+- um único analógico ou gatilho ligando e desligando sozinho, sem mais nada acionado, deixa de contar após 5 minutos e continua ignorado enquanto for a única coisa acionada;
+- nas fontes consultadas a 10 Hz (XInput/WinMM), leituras que mudam em 90% das amostras por dois minutos são tratadas como controle mal interpretado, como o Switch Pro antes da 1.5.6, até a taxa cair.
+
+Limites: uso real restrito a um único analógico, sem nenhum botão, por mais de 5 minutos passa a contar como inatividade; drift intermitente em dois eixos ao mesmo tempo e lixo que muda devagar não são reconhecidos.
+
+**Entrada gerada por software.** Entradas de teclado/mouse criadas por `SendInput` chegam ao Raw Input sem dispositivo e contam como atividade. Elas não são ignoradas por padrão porque touchpads de precisão, acesso remoto e ferramentas de acessibilidade usam o mesmo caminho. A opção `IgnoreSimulatedInput` em `settings.xml` (sem interface) passa a ignorá-las; o log registra `keyboard-no-device`/`mouse-no-device` quando uma delas encerra o descanso.
+
+**Slideshow indisponível.** Pasta ausente, vazia ou sem imagem legível fazia o app tentar a cada 60 s com a tela acesa. Agora os monitores são desligados nesse período de inatividade, pelo mesmo caminho protegido do desligamento automático, e o motivo é mostrado quando o usuário volta. O modo configurado não muda.
+
+**Outros.** A cobertura preta é refeita quando a disposição dos monitores muda. A automação pausada por erro é retomada sozinha em 1, 5, 15 e depois 60 minutos enquanto os erros se repetem. O log de diagnóstico preserva a metade mais recente e registra as tentativas repetidas de desligamento no máximo a cada dez minutos. O app consulta o estado de bloqueio ao iniciar (`WTSSessionInfoEx`).
+
 ## Telas reacesas pelo próprio Windows (1.5.7)
 
 Com o DualSense parado por Bluetooth, o Screen Care não detecta atividade (0/89 consultas XInput/WinMM ativas; 6.133 relatórios Raw Input, nenhum ativo) e solicita o desligamento no tempo configurado. Ainda assim, o Windows reacendia as telas cerca de 20 ms depois de cada desligamento. `GetLastInputInfo` mudava a cada consulta (~10 vezes por segundo) sem nenhum evento de teclado ou mouse, inclusive com o Screen Care encerrado e com o `GameInputRawInputProxy` encerrado. A origem está abaixo do nível de aplicativo: algum driver trata o controle parado como presença do usuário, o que também impede o desligamento de tela do próprio Windows. Componentes presentes no equipamento analisado: Xbox Service/GameInput 4.0 com `SynthGpDriver` (gamepad sintético), AMD Controller Emulation (`amdxe.sys`) e Flydigi (`flydigigamemap.sys`). O responsável não foi isolado, porque isso exige desativar drivers como administrador.
@@ -20,7 +42,7 @@ O Switch Pro identificado como 057E:2009 usa Raw Input nos formatos simples 0x3F
 
 A leitura WinMM do Switch Pro é desconsiderada: em modo aprimorado, ela pode interpretar bytes de sensores/contadores como botões e eixos. Os comandos reais continuam sendo lidos por Raw Input. Relatórios simples mantêm comandos pressionados até soltura/desconexão; o estado de relatórios contínuos expira em um segundo sem atualização. Centros nominais e zonas neutras são usados; o app não solicita calibração da memória do controle.
 
-XInput/WinMM agora executam em um processo auxiliar do próprio ScreenCare.exe, sem janela. O processo principal recebe apenas ativo/inativo. Se o auxiliar encerrar, ele é reiniciado após cinco segundos; dados sem atualização deixam de contar após dois segundos, e um auxiliar sem resposta por dez segundos é encerrado e recriado. Fechar o app encerra seu auxiliar. O auxiliar também acompanha a saída do processo principal. Raw Input de teclado, mouse, DualSense e Switch permanece no processo principal.
+XInput/WinMM agora executam em um processo auxiliar do próprio ScreenCare.exe, sem janela. O processo principal recebe apenas ativo/inativo. Se o auxiliar encerrar, ele é reiniciado após cinco segundos (intervalos maiores a partir da 1.5.8, ver acima); dados sem atualização deixam de contar após dois segundos, e um auxiliar sem resposta por dez segundos é encerrado e recriado. Fechar o app encerra seu auxiliar. O auxiliar também acompanha a saída do processo principal. Raw Input de teclado, mouse, DualSense e Switch permanece no processo principal.
 
 Essa separação contém falhas nativas de drivers legados: corrupção de heap não é uma exceção gerenciada recuperável e não deve ser ignorada dentro de um processo já corrompido. Durante a reinicialização do auxiliar, controles disponíveis apenas por XInput/WinMM ficam temporariamente sem detecção; teclado, mouse e os controles Raw Input continuam disponíveis.
 
@@ -28,7 +50,7 @@ O DualSense conectado por Bluetooth pode não aparecer corretamente nas APIs de 
 
 Formatos consultados: [driver Sony no Linux](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-playstation.c) e [driver PS5 do SDL](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_ps5.c). Implementação local de detecção de atividade, sem incorporar código desses drivers. Os relatórios são limitados por tamanho; buffers Raw Input são dimensionados dinamicamente. IDs de dispositivo ficam em memória e são invalidados quando a conexão muda.
 
-XInput é consultado para os quatro slots; WinMM cobre joysticks legados, com leitura a cada 100 ms e redetecção a cada 2 segundos para slots desconectados. A calibração inicial dos eixos opcionais de dispositivos WinMM genéricos usa a posição ao conectar. Em aparelhos genéricos, deixe os eixos em repouso ao conectá-los. O DualSense direto usa centros/limiares do protocolo e independe dessa calibração.
+XInput é consultado para os quatro slots; WinMM cobre joysticks legados, com leitura a cada 100 ms. Até a 1.5.7 os slots desconectados eram redetectados a cada 2 segundos; desde a 1.5.8, só quando o conjunto de dispositivos muda. A calibração inicial dos eixos opcionais de dispositivos WinMM genéricos usa a posição ao conectar. Em aparelhos genéricos, deixe os eixos em repouso ao conectá-los. O DualSense direto usa centros/limiares do protocolo e independe dessa calibração.
 
 Um jogo aberto, por si só, não bloqueia a automação: o uso dos comandos mantém a contagem reiniciada. Jogos em pausa e controles abandonados continuam sujeitos ao tempo configurado. Se um driver ocultar o HID (por exemplo, modo exclusivo de um remapeador), a saída XInput precisa estar disponível ao aplicativo.
 

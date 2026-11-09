@@ -38,6 +38,19 @@ namespace ScreenCare
             bool success = GetLastInputInfo(ref info); time = info.Time; return success;
         }
 
+        [DllImport("wtsapi32.dll", SetLastError = true)] private static extern bool WTSQuerySessionInformationW(IntPtr server, int session, int information, out IntPtr buffer, out int bytes);
+        [DllImport("wtsapi32.dll")] private static extern void WTSFreeMemory(IntPtr memory);
+        // Lock notifications only report changes. A copy started while the session is
+        // already locked (automatic sign-in after an update) must ask for the state.
+        internal static bool SessionLocked()
+        {
+            IntPtr buffer; int bytes;
+            // WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, WTSSessionInfoEx
+            if (!WTSQuerySessionInformationW(IntPtr.Zero, -1, 25, out buffer, out bytes)) return false;
+            try { return bytes >= 20 && Marshal.ReadInt32(buffer) == 1 && Marshal.ReadInt32(buffer, 16) == 0; } // WTS_SESSIONSTATE_LOCK
+            finally { WTSFreeMemory(buffer); }
+        }
+
         internal static bool InteractiveDesktop()
         {
             IntPtr desktop = OpenInputDesktop(0, false, 0x0100); // DESKTOP_SWITCHDESKTOP
@@ -67,6 +80,9 @@ namespace ScreenCare
         internal event Action ToggleRequested;
         internal event Action MonitorOffRequested;
         internal Func<bool> AllowMonitorOff;
+        // Opt-in: input with no device behind it (SendInput, automation, remote
+        // control; also some touchpads) is then not treated as a person.
+        internal bool IgnoreSimulatedInput;
         internal const int MonitorOffMessage = 0x8000 + 20;
         internal static readonly uint ShowMessage = Native.RegisterWindowMessage("MonitorPausa.Show.1");
         internal static readonly uint ExitMessage = Native.RegisterWindowMessage("MonitorPausa.Exit.1");
@@ -81,6 +97,8 @@ namespace ScreenCare
         private readonly Dictionary<IntPtr, int> controllerDevices = new Dictionary<IntPtr, int>();
         private readonly Dictionary<IntPtr, SwitchActivity> switchStates = new Dictionary<IntPtr, SwitchActivity>();
         private readonly Dictionary<IntPtr, StuckFilter> dualSenseStates = new Dictionary<IntPtr, StuckFilter>();
+        internal int SimulatedInputs { get; private set; }
+        internal int IgnoredInputs { get; private set; }
         internal bool SwitchHeld
         {
             get
@@ -150,6 +168,8 @@ namespace ScreenCare
             uint read = Native.GetRawInputData(handle, 0x10000003, rawBuffer, ref size, headerSize);
             if (read == UInt32.MaxValue || read < headerSize + 8) return;
             int type = Marshal.ReadInt32(rawBuffer);
+            bool simulated = type != 2 && Marshal.ReadIntPtr(rawBuffer, 8) == IntPtr.Zero;
+            if (simulated) { SimulatedInputs++; if (IgnoreSimulatedInput) { IgnoredInputs++; return; } }
             string controllerSource = null;
             bool activity = type == 1 && read >= headerSize + 16
                 && KeyboardIsActivity((ushort)Marshal.ReadInt16(rawBuffer, (int)headerSize),
@@ -169,17 +189,19 @@ namespace ScreenCare
                 {
                     Marshal.Copy(IntPtr.Add(rawBuffer, (int)(headerSize + 8 + i * reportSize)), report, 0, report.Length);
                     long controls;
-                    if (controller == 1 && DualSenseInput.TryControls(report, out controls))
+                    if (controller == 1)
                     {
                         StuckFilter state;
-                        if (!dualSenseStates.TryGetValue(device, out state)) dualSenseStates[device] = state = new StuckFilter();
+                        if (!dualSenseStates.TryGetValue(device, out state)) dualSenseStates[device] = state = new StuckFilter(DualSenseInput.Analog, false);
+                        if (!DualSenseInput.TryControls(report, state.Controls, out controls)) continue;
                         DualSenseReports++; DualSenseReportFormat = "0x" + report[0].ToString("X2") + "/" + report.Length;
                         if (state.Observe(controls, tick)) { DualSenseActivityReports++; activity = true; }
                     }
-                    else if (controller == 2 && SwitchInput.TryControls(report, out controls))
+                    else
                     {
                         SwitchActivity state;
                         if (!switchStates.TryGetValue(device, out state)) switchStates[device] = state = new SwitchActivity();
+                        if (!SwitchInput.TryControls(report, state.Controls, out controls)) continue;
                         state.Observe(report[0], controls, tick);
                         SwitchReports++; SwitchReportFormat = "0x" + report[0].ToString("X2") + "/" + report.Length;
                         if (state.IsActive(tick)) { SwitchActivityReports++; activity = true; }
@@ -197,7 +219,8 @@ namespace ScreenCare
             }
             if (activity && DirectInput != null)
             {
-                LastInputSource = type == 1 ? ((Marshal.ReadInt16(rawBuffer, (int)headerSize + 2) & 1) != 0 ? "keyboard-release" : "keyboard-press") : type == 2 ? controllerSource
+                LastInputSource = simulated ? (type == 1 ? "keyboard-no-device" : "mouse-no-device")
+                    : type == 1 ? ((Marshal.ReadInt16(rawBuffer, (int)headerSize + 2) & 1) != 0 ? "keyboard-release" : "keyboard-press") : type == 2 ? controllerSource
                     : Marshal.ReadInt16(rawBuffer, (int)headerSize + 4) != 0 ? "mouse-button-wheel"
                     : (Marshal.ReadInt16(rawBuffer, (int)headerSize) & 1) != 0 ? "mouse-absolute" : "mouse-relative";
                 DirectInput();

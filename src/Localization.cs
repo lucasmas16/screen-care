@@ -46,7 +46,7 @@ namespace ScreenCare
             { "Desligar telas em 2 segundos", "Turn off displays in 2 seconds" },
             { "As telas serão desligadas em 2 segundos.", "Displays will turn off in 2 seconds." },
             { "O atalho Ctrl+Alt+F11 está em uso. Use o menu para desligar as telas.", "Ctrl+Alt+F11 is already in use. Use the menu to turn off displays." },
-            { "A automação foi pausada após um erro. O app continua aberto. Revise as configurações e ative novamente.", "Automation was paused after an error. The app is still running. Review settings and enable it again." },
+            { "A automação foi pausada após um erro e será retomada automaticamente em alguns minutos. O app continua aberto.", "Automation was paused after an error and will resume automatically in a few minutes. The app is still running." },
             { "Não foi possível monitorar teclado e mouse.", "Could not monitor keyboard and mouse input." },
             { "Não foi possível acompanhar a sessão e os monitores.", "Could not monitor the session and displays." },
             { "Valor", "Value" }, { "Diminuir", "Decrease" }, { "Aumentar", "Increase" },

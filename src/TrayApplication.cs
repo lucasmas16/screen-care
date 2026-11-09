@@ -24,10 +24,17 @@ namespace ScreenCare
         private readonly DelayedAction manual = new DelayedAction();
         private readonly MonitorPowerGuard powerGuard = new MonitorPowerGuard();
         private bool forceMonitorsOff;
+        // The slideshow could not run: this idle period uses monitor-off instead.
+        private bool fallbackOff;
+        private string pendingNotice;
+        private double coverCheckAt = Double.PositiveInfinity, lastRetryLog = -1000, quietUntil;
+        private Timer resume;
+        private bool pausedByError, resumeEnabled;
+        private int recoveries;
         private double lastRecovery = -100;
         private uint powerFlags;
         internal double Now { get { return clock.Elapsed.TotalSeconds; } }
-        private IdleAction EffectiveAction { get { return session.EffectiveAction(forceMonitorsOff ? IdleAction.MonitorsOff : settings.Action); } }
+        private IdleAction EffectiveAction { get { return session.EffectiveAction(forceMonitorsOff || fallbackOff ? IdleAction.MonitorsOff : settings.Action); } }
         private bool CanTurnOff { get { return !exiting && idle.Active && EffectiveAction == IdleAction.MonitorsOff && session.Allows(EffectiveAction, Native.InteractiveDesktop(), form != null); } }
 
         internal TrayApplication(Settings value, bool showSettings)
@@ -35,10 +42,17 @@ namespace ScreenCare
             settings = value; L10n.Current = settings.Language;
             idle = new IdleController(Now);
             input = new InputWindow();
+            input.IgnoreSimulatedInput = settings.IgnoreSimulatedInput;
+            if (Native.SessionLocked())
+            {
+                // No lock notification arrives for a lock that predates this process.
+                session.Change(7); uint lockedAt; if (Native.TryLastInput(out lockedAt)) session.ObserveInput(lockedAt);
+                Diagnostics.Event("started-locked");
+            }
             input.DirectInput += OnInput;
             input.AllowMonitorOff = delegate { return CanTurnOff; };
             input.DisplayChanged += delegate(bool on) {
-                if (powerGuard.DisplayOn != on) Diagnostics.Event(on ? "display-on" : "display-off");
+                if (powerGuard.DisplayOn != on && Now >= quietUntil) Diagnostics.Event(on ? "display-on" : "display-off");
                 powerGuard.Observe(on, Now);
                 // Real input ends the action (and disarms the guard) before Windows
                 // reports the display on. Still armed means nothing we detect woke it.
@@ -51,7 +65,9 @@ namespace ScreenCare
             input.Resumed += delegate { session.Suspended = false; Reset(); UpdatePower(); };
             input.DisplayLayoutChanged += delegate {
                 if (idle.DisplayLayoutChanged(Now, EffectiveAction == IdleAction.MonitorsOff))
-                { manual.Cancel(); powerGuard.Reset(); forceMonitorsOff = false; StopSlides(); UpdatePower(); }
+                { manual.Cancel(); powerGuard.Reset(); forceMonitorsOff = fallbackOff = false; StopSlides(); UpdatePower(); }
+                // Monitors waking from DisplayPort sleep reconnect one by one.
+                else if (blackout != null) coverCheckAt = Now + 0.5;
             };
             input.ShowRequested += OpenSettings;
             input.ExitRequested += delegate { Diagnostics.Event("exit-request"); Shutdown(); };
@@ -85,12 +101,15 @@ namespace ScreenCare
         private void OnInputFrom(string source)
         {
             if (exiting) return;
-            if (idle.Input(Now)) { Diagnostics.Event("idle-ended-by-" + source); StopSlides(); }
-            powerGuard.Reset(); forceMonitorsOff = false;
+            bool ended = idle.Input(Now);
+            if (ended) { Diagnostics.Event("idle-ended-by-" + source); StopSlides(); }
+            powerGuard.Reset(); forceMonitorsOff = fallbackOff = false;
             UpdatePower();
+            // Explain the fallback once the person is back to read it.
+            if (ended && pendingNotice != null) { string notice = pendingNotice; pendingNotice = null; Notify(notice); }
         }
         private void Reset()
-        { manual.Cancel(); powerGuard.Reset(); forceMonitorsOff = false; StopSlides(); idle.Reset(Now); }
+        { manual.Cancel(); powerGuard.Reset(); forceMonitorsOff = fallbackOff = false; StopSlides(); idle.Reset(Now); }
         private void ScheduleMonitorOff()
         {
             if (form != null) form.Close();
@@ -119,25 +138,45 @@ namespace ScreenCare
             if (manual.TryTake(Now))
             { forceMonitorsOff = manual.MonitorsOnly; idle.Force(Now); Activate(); }
             else if (!manual.Pending && idle.TryActivate(Now, settings.IdleSeconds, settings.Enabled, !session.Allows(settings.Action, true, form != null))) Activate();
-            if (powerGuard.TryRetry(Now, CanTurnOff)) { Diagnostics.Event("monitor-off-retry"); RequestMonitorOff(); }
+            if (powerGuard.TryRetry(Now, CanTurnOff)) RequestMonitorOff(true);
+            if (blackout != null && Now >= coverCheckAt) { coverCheckAt = Double.PositiveInfinity; RefreshCover(); }
             if (slides != null) slides.Tick();
         }
         private void Activate()
         {
-            if (EffectiveAction == IdleAction.MonitorsOff) { powerGuard.Begin(Now); UpdatePower(); RequestMonitorOff(); return; }
+            if (EffectiveAction == IdleAction.MonitorsOff) { powerGuard.Begin(Now); UpdatePower(); RequestMonitorOff(false); return; }
             try
             {
-                slides = new Slideshow(settings, delegate { return Now; }, ActionFailed, delegate { Reset(); UpdatePower(); });
+                slides = new Slideshow(settings, delegate { return Now; }, SlideshowFailed, delegate { Reset(); UpdatePower(); });
                 UpdatePower(); slides.Start();
             }
-            catch (Exception ex) { ActionFailed(ex.Message); }
+            catch (Exception ex) { SlideshowFailed(ex.Message); }
+        }
+        // A missing folder or unreadable images must not leave a static screen on:
+        // retrying every minute did exactly that. Turn the monitors off instead.
+        private void SlideshowFailed(string message)
+        {
+            StopSlides();
+            if (exiting || !idle.Active) return;
+            Diagnostics.Event("slideshow-failed-monitors-off");
+            pendingNotice = message; fallbackOff = true;
+            powerGuard.Begin(Now); UpdatePower(); RequestMonitorOff(false);
         }
         private void ActionFailed(string message)
-        { powerGuard.Reset(); forceMonitorsOff = false; StopSlides(); idle.Failed(Now); UpdatePower(); Notify(message); }
-        private void RequestMonitorOff()
+        { powerGuard.Reset(); forceMonitorsOff = fallbackOff = false; StopSlides(); idle.Failed(Now); UpdatePower(); Notify(message); }
+        private void RequestMonitorOff(bool retry)
         {
             notifications.Hide();
-            Diagnostics.Event("monitor-off-request");
+            // A display that keeps waking is retried every minute for as long as it
+            // lasts. Record the first retries and then one cycle every ten minutes,
+            // so start/exit history is not pushed out of the bounded log.
+            bool record = !retry || powerGuard.Retries < 3 || Now - lastRetryLog >= 600;
+            if (!record) quietUntil = Now + 5;
+            else
+            {
+                if (retry) { lastRetryLog = Now; Diagnostics.Event("monitor-off-retry"); }
+                Diagnostics.Event("monitor-off-request");
+            }
             // Post to our own top-level window; DefWindowProc executes the standard system command.
             // Never broadcast synchronously to arbitrary (possibly hung) third-party windows.
             if (!Native.PostMessage(input.Handle, InputWindow.MonitorOffMessage, IntPtr.Zero, IntPtr.Zero))
@@ -147,6 +186,19 @@ namespace ScreenCare
         {
             if (exiting || blackout != null || slides != null || !CanTurnOff || !Native.InteractiveDesktop()) return;
             Diagnostics.Event("display-woke-without-input");
+            try { blackout = new Blackout(delegate { OnInputFrom("cover-pointer"); }); coverCheckAt = Now + 2; }
+            catch (Exception error)
+            {
+                if (!Recovery.CanHandle(error)) throw;
+                Diagnostics.Event("cover-failed");
+            }
+        }
+        // Rebuild the cover when the monitor arrangement no longer matches it.
+        private void RefreshCover()
+        {
+            if (blackout == null || blackout.Covers(Screen.AllScreens)) return;
+            Diagnostics.Event("cover-relayout");
+            var old = blackout; blackout = null; old.Dispose();
             try { blackout = new Blackout(delegate { OnInputFrom("cover-pointer"); }); }
             catch (Exception error)
             {
@@ -197,7 +249,10 @@ namespace ScreenCare
             if (startupChanged || next.StartWithWindows) Startup.Set(next.StartWithWindows, Application.ExecutablePath);
             try { SettingsStore.Save(next, SettingsStore.DefaultPath); }
             catch { if (startupChanged) Startup.Set(settings.StartWithWindows, Application.ExecutablePath); throw; }
+            pausedByError = false; if (resume != null) resume.Stop();
+            pendingNotice = null;
             Reset(); settings = next; L10n.Current = settings.Language;
+            input.IgnoreSimulatedInput = settings.IgnoreSimulatedInput;
             if (form != null) form.SetEnabled(settings.Enabled);
             UpdateTray(); UpdatePower(); timer.Start();
         }
@@ -205,11 +260,14 @@ namespace ScreenCare
         {
             if (exiting || !Recovery.CanHandle(error)) return false;
             bool showNotice = Now - lastRecovery >= 60;
+            recoveries = Now - lastRecovery >= 3600 ? 1 : recoveries + 1;
             lastRecovery = Now;
             try
             {
-                timer.Stop(); settings = settings.Copy(); settings.Enabled = false;
-                manual.Cancel(); powerGuard.Reset(); forceMonitorsOff = false; idle.Reset(Now);
+                timer.Stop();
+                if (!pausedByError) { pausedByError = true; resumeEnabled = settings.Enabled; }
+                settings = settings.Copy(); settings.Enabled = false;
+                manual.Cancel(); powerGuard.Reset(); forceMonitorsOff = fallbackOff = false; idle.Reset(Now);
                 // Remove failing UI/timers before doing optional presentation work.
                 Recovery.Attempt(StopSlides);
                 Recovery.Attempt(notifications.Hide);
@@ -218,11 +276,29 @@ namespace ScreenCare
                 Recovery.Attempt(UpdatePower);
                 Recovery.Attempt(UpdateTray);
                 Diagnostics.Event("automation-paused-after-error");
+                // Nobody may be there to re-enable it: try again later, backing off while errors repeat.
+                ScheduleResume(ResumeDelay(recoveries));
                 // Throttle notifications, not recovery: a second operational error is no reason to exit.
-                if (showNotice) Recovery.Attempt(delegate { Notify(L10n.T("A automação foi pausada após um erro. O app continua aberto. Revise as configurações e ative novamente.")); });
+                if (showNotice) Recovery.Attempt(delegate { Notify(L10n.T("A automação foi pausada após um erro e será retomada automaticamente em alguns minutos. O app continua aberto.")); });
                 return true;
             }
             catch (Exception recoveryError) { Diagnostics.Error(recoveryError); return false; }
+        }
+        internal static int ResumeDelay(int consecutive)
+        { return consecutive <= 1 ? 60 : consecutive == 2 ? 300 : consecutive == 3 ? 900 : 3600; }
+        private void ScheduleResume(int seconds)
+        {
+            if (resume == null) { resume = new Timer(); resume.Tick += delegate { ResumeAfterError(); }; }
+            resume.Stop(); resume.Interval = seconds * 1000; resume.Start();
+        }
+        private void ResumeAfterError()
+        {
+            if (resume != null) resume.Stop();
+            if (exiting || !pausedByError) return;
+            pausedByError = false;
+            settings = settings.Copy(); settings.Enabled = resumeEnabled;
+            idle.Reset(Now); UpdateTray(); UpdatePower(); timer.Start();
+            Diagnostics.Event("automation-resumed-after-error");
         }
         private void UpdateTray()
         {
@@ -263,6 +339,7 @@ namespace ScreenCare
             try
             {
                 Recovery.Attempt(timer.Dispose);
+                if (resume != null) Recovery.Attempt(resume.Dispose);
                 Recovery.Attempt(gamepads.Dispose);
                 Recovery.Attempt(StopSlides);
                 Recovery.Attempt(notifications.Dispose);

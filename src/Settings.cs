@@ -21,6 +21,9 @@ namespace ScreenCare
         public bool StartWithWindows = false;
         public Appearance Appearance = Appearance.Dark;
         public Language Language = L10n.Detect(System.Globalization.CultureInfo.CurrentUICulture);
+        // Advanced, file-only option. When true, keyboard/mouse input that no device
+        // produced (automation, remote control, some touchpads) is not activity.
+        public bool IgnoreSimulatedInput = false;
 
         public Settings Copy() { return (Settings)MemberwiseClone(); }
         public void Normalize()

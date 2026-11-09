@@ -18,7 +18,11 @@ Get the [installer or portable version from Releases](https://github.com/lucasma
 
 Requires Windows 10/11 x64 and .NET Framework 4.8 or later. Executables do not yet have an Authenticode publisher signature.
 
-## What's new in 1.5.7
+## What's new in 1.5.8
+
+A review of what could still keep screens on or close the app. The controller helper no longer leaks handles: Windows leaks about 20 registry handles each time an empty joystick slot is queried, and the helper asked every two seconds (1.4 million handles after two days). Empty slots are now checked only when a device is connected or removed, the helper replaces itself if handles accumulate, and a helper that keeps failing is restarted less often. Worn sticks no longer block the timeout: dead zones have hysteresis, one-sample glitches are ignored, a lone stick or trigger going on and off by itself stops counting after 5 minutes, and readings that change on every sample for two minutes are treated as a misread controller. A slideshow that cannot run turns the monitors off instead of leaving the screen on. Automation paused by an error resumes by itself. The black cover follows monitor changes, the diagnostic log keeps its newest half, and a session already locked at startup is recognised. See [validation and limits](docs/VALIDACAO-1.5.8.md).
+
+## Previous changes in 1.5.7
 
 Some controller drivers make Windows treat a connected, resting gamepad as user presence. With a Bluetooth DualSense, Windows turned the displays back on about 20 ms after each monitor-off. When displays wake while the monitor-off action is active and Screen Care detected no keyboard, mouse or controller input, every screen is now covered in black, without taking focus, until real input; monitor-off retries continue. On any controller, a set of engaged controls left exactly unchanged for 5 minutes stops counting as activity. On the lock screen the same driver signal cannot be told apart from real input, so the lock screen stays on while it is active. See [validation and limits](docs/VALIDACAO-1.5.7.md).
 

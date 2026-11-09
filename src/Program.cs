@@ -10,8 +10,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Reduce static-image exposure with activity-based monitor standby and slideshows")]
 [assembly: AssemblyCompany("Screen Care")]
 [assembly: AssemblyProduct("Screen Care")]
-[assembly: AssemblyVersion("1.5.7.0")]
-[assembly: AssemblyFileVersion("1.5.7.0")]
+[assembly: AssemblyVersion("1.5.8.0")]
+[assembly: AssemblyFileVersion("1.5.8.0")]
 // Every native dependency is a Windows component. Never search the working
 // directory or the portable application's directory for these DLLs.
 [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
@@ -56,7 +56,7 @@ namespace ScreenCare
                     Language selected = Array.IndexOf(args, "--language=en") >= 0 ? Language.English : Array.IndexOf(args, "--language=pt-BR") >= 0 ? Language.Portuguese : settings.Language;
                     L10n.Current = selected;
                     if (settings.Language != selected) { settings.Language = selected; SettingsStore.Save(settings, SettingsStore.DefaultPath); }
-                    Diagnostics.Event("start-1.5.7");
+                    Diagnostics.Event("start-1.5.8");
                     using (app = new TrayApplication(settings, Array.IndexOf(args, "--background") < 0 || warning != null))
                     { if (warning != null) app.Notify(L10n.T(warning)); Application.Run(app); }
                 }

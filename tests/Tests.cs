@@ -16,6 +16,7 @@ namespace ScreenCare
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
         [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr process);
         [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
@@ -58,8 +59,8 @@ namespace ScreenCare
             if (args.Length == 2 && args[0] == "--worker-fixture")
             {
                 Console.WriteLine("1"); Console.Out.Flush();
-                Thread.Sleep(args[1] == "exit" ? 300 : 30000);
-                return 77;
+                Thread.Sleep(args[1] == "hang" ? 30000 : 300);
+                return args[1] == "recycle" ? GamepadProcess.RecycleExitCode : 77;
             }
             if (args.Length == 2 && args[0] == "--check-path")
             {
@@ -287,8 +288,103 @@ namespace ScreenCare
                 Check(!sony.Observe(bogus), "Sony WinMM duplicate ignored; Raw Input owns real commands " + product);
             }
             TestStuckControls(caps, neutral);
+            TestControllerRobustness(caps, neutral);
             TestSwitch();
             TestGamepadProcess();
+        }
+        // Seconds until the idle action would start with this controller connected, or -1.
+        private static int IdleAfter(StuckFilter filter, int idleSeconds, int totalSeconds, Func<int, long, long> controlsAt)
+        {
+            var idle = new IdleController(0);
+            for (int tenth = 1; tenth <= totalSeconds * 10; tenth++)
+            {
+                double now = tenth / 10.0;
+                if (filter.Observe(controlsAt(tenth, filter.Controls), (uint)(tenth * 100))) idle.Input(now);
+                if (idle.TryActivate(now, idleSeconds, true, false)) return tenth / 10;
+            }
+            return -1;
+        }
+        private static void TestControllerRobustness(GamepadMonitor.JoyCaps caps, GamepadMonitor.JoyState neutral)
+        {
+            const long lx = 1L << 18, rt = 1L << 17;
+            Check(GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = 7000 }, 0) == 0
+                && GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = 7900 }, 0) == lx
+                && GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = 7000 }, lx) == lx
+                && GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = 5800 }, lx) == 0, "Xbox stick releases only well inside the dead zone");
+            Check(GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { RightTrigger = 25 }, 0) == 0
+                && GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { RightTrigger = 25 }, rt) == rt
+                && GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { RightTrigger = 22 }, rt) == 0, "Xbox trigger has hysteresis");
+            byte[] sense = new byte[64]; sense[0] = 1; for (int i = 1; i <= 4; i++) sense[i] = 128; sense[8] = 8; sense[1] = 149;
+            long held, edge;
+            Check(DualSenseInput.TryControls(sense, 0, out edge) && edge == 0 && DualSenseInput.TryControls(sense, 1, out held) && held == 1, "DualSense stick has hysteresis");
+            byte[] pro = new byte[12]; pro[0] = 0x3F; pro[3] = 8; for (int i = 4; i < 12; i += 2) { pro[i] = 0; pro[i + 1] = 128; }
+            pro[4] = 0x58; pro[5] = 0x9B; // 39768: 7000 past centre
+            Check(SwitchInput.TryControls(pro, 0, out edge) && edge == 0 && SwitchInput.TryControls(pro, 1L << 24, out held) && held == 1L << 24
+                && (SwitchInput.Analog & held) != 0, "Switch stick has hysteresis and reports as analog");
+            var legacy = new GamepadMonitor.LegacyActivity(caps, neutral);
+            var near = neutral; near.X = 32767 + 7000;
+            Check(legacy.Controls(near, 0) == 0 && legacy.Controls(near, 1L << 36) == 1L << 36, "WinMM axis has hysteresis");
+
+            var rng = new Random(7);
+            int limit = (int)(StuckFilter.LimitMs / 1000);
+            int steady = IdleAfter(new StuckFilter(GamepadMonitor.XboxAnalog, true), 120, 3600, delegate(int t, long previous) {
+                return GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = 9000 }, previous); });
+            Check(steady >= limit + 119 && steady <= limit + 121, "stick resting past the dead zone stops counting at the limit");
+            int noisy = IdleAfter(new StuckFilter(GamepadMonitor.XboxAnalog, true), 120, 3600, delegate(int t, long previous) {
+                return GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = (short)(7849 + rng.Next(-60, 61)) }, previous); });
+            Check(noisy > 0 && noisy <= limit + 125, "stick noise around the dead zone no longer blocks the idle action");
+            int spikes = IdleAfter(new StuckFilter(GamepadMonitor.XboxAnalog, true), 120, 3600, delegate(int t, long previous) {
+                return GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = (short)(t % 900 == 0 ? 20000 : 0) }, previous); });
+            Check(spikes > 0 && spikes <= limit + 125, "one-sample stick glitches no longer block the idle action");
+            int episodes = IdleAfter(new StuckFilter(GamepadMonitor.XboxAnalog, true), 120, 3600, delegate(int t, long previous) {
+                return GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { LX = (short)(t % 300 < 20 ? 20000 : 0) }, previous); });
+            Check(episodes > 0 && episodes <= limit + 155, "a lone analog control drifting on and off stops counting at the limit");
+            var garbageFilter = new StuckFilter(GamepadMonitor.LegacyAnalog, true);
+            var unknown = caps; unknown.Manufacturer = 0x0F0D; unknown.Product = 0x00C1; unknown.Name = "Driver joystick PC da Microsoft"; unknown.Caps = 63;
+            var misread = new GamepadMonitor.LegacyActivity(unknown, neutral);
+            int garbage = IdleAfter(garbageFilter, 120, 3600, delegate(int t, long previous) {
+                var state = neutral; state.Buttons = (uint)(119040 + rng.Next(0, 250)); state.Y = 12544; state.R = (uint)(47056 + 4096 * rng.Next(0, 4));
+                return misread.Controls(state, previous); });
+            Check(garbage > 0 && garbage <= 245 && garbageFilter.Noisy, "constantly changing garbage from a misread controller is ignored after two minutes");
+            uint later = 3600u * 1000;
+            for (int t = 1; t <= 400; t++) garbageFilter.Observe(0, later + (uint)t * 100);
+            Check(!garbageFilter.Noisy && garbageFilter.Observe(2, later + 41000), "a controller that stops sending garbage counts again");
+
+            // Real use must keep counting.
+            int racing = IdleAfter(new StuckFilter(GamepadMonitor.XboxAnalog, true), 120, 1800, delegate(int t, long previous) {
+                return GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { RightTrigger = 255, LX = (short)(t / 30 % 2 == 0 ? 20000 : -20000) }, previous); });
+            Check(racing < 0, "analog-only play with throttle held and steering keeps the screen on");
+            int cornering = IdleAfter(new StuckFilter(GamepadMonitor.XboxAnalog, true), 120, 1800, delegate(int t, long previous) {
+                return GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { RightTrigger = 255, LX = (short)(t % 100 < 40 ? 20000 : 0) }, previous); });
+            Check(cornering < 0, "repeating one steering direction while another control is held keeps counting");
+            int reading = IdleAfter(new StuckFilter(GamepadMonitor.XboxAnalog, true), 120, 1800, delegate(int t, long previous) {
+                return GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { Buttons = (ushort)(t % 600 < 2 ? 0x1000 : 0) }, previous); });
+            Check(reading < 0, "one button pressed once a minute keeps the screen on");
+            int brisk = IdleAfter(new StuckFilter(GamepadMonitor.XboxAnalog, true), 120, 1800, delegate(int t, long previous) {
+                return GamepadMonitor.XboxControls(new GamepadMonitor.XboxState { Buttons = (ushort)(t % 6 < 3 ? 0x1000 : 0) }, previous); });
+            Check(brisk < 0, "fast human button presses are not mistaken for garbage");
+            var raw = new StuckFilter(DualSenseInput.Analog, false);
+            raw.Observe(0, 0); raw.Observe(1, 400000); raw.Observe(0, 400004);
+            Check(!raw.Observe(0, 400400) && !raw.Observe(1, 800000), "a glitch shorter than the debounce never refreshes the countdown");
+            raw.Observe(1, 800004);
+            Check(raw.Observe(1, 800200), "a stick position that lasts counts as use");
+            var eventOnly = new SwitchActivity(); eventOnly.Observe(0x3F, 0L, 0); eventOnly.Observe(0x3F, 1L << 24, 400000);
+            Check(!eventOnly.IsActive(400100) && eventOnly.IsActive(400200), "event-only reports confirm a held stick without another report");
+
+            // Empty WinMM slots: probing them is what leaked handles in Windows.
+            var slots = new SlotProbe(); long devices = 1; int queries = 0, passes = 0;
+            Func<long> list = delegate { queries++; return devices; };
+            for (int t = 0; t < 36000; t++) if (slots.Allow(t / 10.0, list) && t % 20 == 0) passes++;
+            Check(passes >= 3 && passes <= 3 + 3600 / (int)SlotProbe.Fallback && queries <= 3601, "empty joystick slots are probed at start and then only as a slow safety net");
+            devices = 2; int after = 0;
+            for (int t = 36000; t < 36200; t++) if (slots.Allow(t / 10.0, list) && t % 20 == 0) after++;
+            Check(after >= 2 && after <= 4, "a controller arriving or leaving reopens the probe window briefly");
+            Check(GamepadMonitor.DeviceSignature() == GamepadMonitor.DeviceSignature() && GamepadMonitor.HandleCount() > 0, "device list signature is stable and the handle count is readable");
+            uint before = GamepadMonitor.HandleCount();
+            for (int i = 0; i < 2000; i++) GamepadMonitor.DeviceSignature();
+            Check(GamepadMonitor.HandleCount() < before + 50, "watching the device list does not leak handles");
+            Check(GamepadProcess.Backoff(1) == GamepadProcess.RestartDelay && GamepadProcess.Backoff(2) == 30 && GamepadProcess.Backoff(3) == 120 && GamepadProcess.Backoff(9) == 600, "a worker that keeps failing is restarted less often");
+            Check(!Native.SessionLocked(), "an unlocked session is not reported as locked at startup");
         }
         private static void TestStuckControls(GamepadMonitor.JoyCaps caps, GamepadMonitor.JoyState neutral)
         {
@@ -330,6 +426,17 @@ namespace ScreenCare
                 Check(!worker.Poll(clock.Elapsed.TotalSeconds) && worker.ChildId == 0, "controller worker exit clears stale input and preserves parent");
                 worker.Poll(20);
                 Check(worker.ChildId != 0, "controller worker restarts after backoff");
+            }
+            using (var worker = new GamepadProcess(delegate { return new ProcessStartInfo(Application.ExecutablePath, "--worker-fixture recycle"); }))
+            {
+                worker.MinRecycleSeconds = 0.1; clock.Restart(); int starts = 0, last = 0;
+                while (clock.ElapsedMilliseconds < 4000 && starts < 3)
+                {
+                    worker.Poll(clock.Elapsed.TotalSeconds);
+                    if (worker.ChildId != 0 && worker.ChildId != last) { starts++; last = worker.ChildId; }
+                    Thread.Sleep(10);
+                }
+                Check(starts >= 3, "a worker that asks to be recycled is replaced at once, without backoff");
             }
             using (var worker = new GamepadProcess(delegate { return new ProcessStartInfo(Application.ExecutablePath, "--worker-fixture hang"); }))
             {
@@ -413,6 +520,12 @@ namespace ScreenCare
                     displayChanged(false); displayChanged(true);
                     Check(cover() != null, "repeated phantom wake keeps one cover");
                     Check(((MonitorPowerGuard)type.GetField("powerGuard", flags).GetValue(app)).Armed, "monitor-off keeps being retried under the cover");
+                    Check(cover().Covers(Screen.AllScreens), "cover matches the current monitor arrangement");
+                    cover().Dispose();
+                    type.GetField("blackout", flags).SetValue(app, new Blackout(delegate { }, new[] { new Rectangle(-30000, -30000, 10, 10) }));
+                    Check(!cover().Covers(Screen.AllScreens), "a cover built for another arrangement is detected");
+                    type.GetMethod("RefreshCover", flags).Invoke(app, null);
+                    Check(cover() != null && cover().Covers(Screen.AllScreens) && cover().Count == Screen.AllScreens.Length, "cover is rebuilt when the monitors change");
                 }
                 type.GetMethod("OnInput", flags).Invoke(app, null);
                 Check(cover() == null, "detected input removes the black cover");
@@ -420,6 +533,74 @@ namespace ScreenCare
                 Check(cover() == null, "display-on after real input is not covered");
                 Application.DoEvents();
             }
+        }
+        private static void TestSlideshowFallback(string root)
+        {
+            var flags = BindingFlags.Instance | BindingFlags.NonPublic; var type = typeof(TrayApplication);
+            var broken = new Settings { Enabled = false, Action = IdleAction.Slideshow, ImageFolder = Path.Combine(root, "missing-image-folder"), Language = Language.English };
+            using (var app = new TrayApplication(broken, false))
+            {
+                var input = (InputWindow)type.GetField("input", flags).GetValue(app);
+                input.AllowMonitorOff = delegate { return false; };
+                var manual = (DelayedAction)type.GetField("manual", flags).GetValue(app);
+                Func<bool> fell = delegate { return (bool)type.GetField("fallbackOff", flags).GetValue(app); };
+                // Live desktop input can end the idle state first; that is correct, so try again.
+                for (int attempt = 0; attempt < 5 && !fell(); attempt++)
+                {
+                    manual.Schedule(-3, false); type.GetMethod("Tick", flags).Invoke(app, null);
+                    var wait = Stopwatch.StartNew();
+                    while (wait.ElapsedMilliseconds < 3000 && !fell()) { Application.DoEvents(); Thread.Sleep(10); }
+                }
+                Check(fell(), "slideshow with an unavailable folder falls back to monitor-off instead of retrying forever");
+                if (fell())
+                {
+                    Check((IdleAction)type.GetProperty("EffectiveAction", flags).GetValue(app, null) == IdleAction.MonitorsOff
+                        && type.GetField("slides", flags).GetValue(app) == null
+                        && ((MonitorPowerGuard)type.GetField("powerGuard", flags).GetValue(app)).Armed, "fallback uses the guarded monitor-off path");
+                    Check((uint)type.GetField("powerFlags", flags).GetValue(app) == 0x80000000u, "fallback releases the stay-awake request held for the slideshow");
+                    type.GetMethod("OnInput", flags).Invoke(app, null);
+                    var notifications = (StatusToastHost)type.GetField("notifications", flags).GetValue(app);
+                    Check(notifications.Current != null && !fell()
+                        && (IdleAction)type.GetProperty("EffectiveAction", flags).GetValue(app, null) == IdleAction.Slideshow, "returning user is told why and the slideshow setting is kept");
+                }
+                Application.DoEvents();
+            }
+        }
+        private static void TestRecoveryResume()
+        {
+            var flags = BindingFlags.Instance | BindingFlags.NonPublic; var type = typeof(TrayApplication);
+            using (var app = new TrayApplication(new Settings { Enabled = true, IdleSeconds = 86400, Language = Language.English }, false))
+            {
+                var timer = (System.Windows.Forms.Timer)type.GetField("timer", flags).GetValue(app);
+                Func<Settings> current = delegate { return (Settings)type.GetField("settings", flags).GetValue(app); };
+                Check(app.TryRecover(new IOException("synthetic failure")) && !timer.Enabled && !current().Enabled, "recoverable error pauses automation");
+                var resume = (System.Windows.Forms.Timer)type.GetField("resume", flags).GetValue(app);
+                Check(resume != null && resume.Enabled && resume.Interval == 60000, "a paused automation schedules its own retry");
+                app.TryRecover(new IOException("again"));
+                Check(resume.Interval == 300000 && TrayApplication.ResumeDelay(3) == 900 && TrayApplication.ResumeDelay(8) == 3600, "repeated errors lengthen the retry delay");
+                type.GetMethod("ResumeAfterError", flags).Invoke(app, null);
+                Check(timer.Enabled && current().Enabled && !resume.Enabled, "automation resumes by itself with the previous preference");
+                Application.DoEvents();
+            }
+        }
+        private static void TestSimulatedInput()
+        {
+            using (var input = new InputWindow())
+            {
+                Pump(100); int before = input.SimulatedInputs;
+                mouse_event(1, 1, 0, 0, UIntPtr.Zero); Pump(150); mouse_event(1, -1, 0, 0, UIntPtr.Zero); Pump(150);
+                Check(input.SimulatedInputs >= before + 2 && input.IgnoredInputs == 0, "software-generated input is recognised and counts by default");
+                input.IgnoreSimulatedInput = true;
+                mouse_event(1, 1, 0, 0, UIntPtr.Zero); Pump(150); mouse_event(1, -1, 0, 0, UIntPtr.Zero); Pump(150);
+                Check(input.IgnoredInputs >= 2, "IgnoreSimulatedInput drops input that no device produced");
+            }
+            string path = Path.Combine(Path.GetTempPath(), "ScreenCare-ignore-" + Guid.NewGuid().ToString("N") + ".xml");
+            try
+            {
+                SettingsStore.Save(new Settings { IgnoreSimulatedInput = true, Enabled = false }, path);
+                string warning; Check(SettingsStore.Load(path, out warning).IgnoreSimulatedInput && warning == null, "IgnoreSimulatedInput persists in the settings file");
+            }
+            finally { File.Delete(path); }
         }
         private static void Pump(int milliseconds)
         {
@@ -905,12 +1086,21 @@ namespace ScreenCare
                 Application.DoEvents();
             }
             TestCover();
+            TestSlideshowFallback(root);
+            TestRecoveryResume();
+            TestSimulatedInput();
             Diagnostics.Error(new InvalidOperationException("synthetic diagnostic"));
             string error = File.ReadAllText(Path.Combine(Diagnostics.DirectoryPath, "last-error.txt"));
             Check(error.Contains("synthetic diagnostic"), "failure is recorded independently of shutdown");
             string log = Path.Combine(Diagnostics.DirectoryPath, "diagnostics.log");
             File.WriteAllText(log, new String('x', 66000)); Diagnostics.Event("rotation-test");
             Check(new FileInfo(log).Length < 200 && File.ReadAllText(log).Contains("rotation-test"), "local diagnostic log is bounded");
+            var history = new System.Text.StringBuilder();
+            for (int i = 0; i < 1400; i++) history.Append("2026-01-01T00:00:00.0000000Z history-line-" + i.ToString("0000") + "\r\n");
+            File.WriteAllText(log, history.ToString()); Diagnostics.Event("tail-test");
+            string kept = File.ReadAllText(log);
+            Check(new FileInfo(log).Length <= Diagnostics.Limit && kept.Contains("history-line-1399") && kept.Contains("tail-test")
+                && !kept.Contains("history-line-0000") && kept.StartsWith("2026-01-01T00:00:00.0000000Z history-line-"), "log rotation keeps the newest whole lines instead of erasing history");
             L10n.Current = Language.Portuguese;
         }
         private static void Render(Form form, string path)

@@ -1,4 +1,4 @@
-SCREEN CARE 1.5.7 — Windows 10/11, x64
+SCREEN CARE 1.5.8 — Windows 10/11, x64
 
 ENGLISH — Portuguese instructions follow below.
 
@@ -40,7 +40,15 @@ ACTIVITY AND POWER
 Keyboard, mouse, touchpad and gamepad activity reset the timer, independently of video, music or CPU use.
 DualSense/Edge USB and Bluetooth, XInput/Steam Input and WinMM controllers are supported. Held buttons,
 triggers and sticks outside the dead zone count as activity; idle controllers and minor drift do not.
-Controls left exactly unchanged for 5 minutes stop counting (latched driver/report errors).
+Controls left exactly unchanged for 5 minutes stop counting (latched driver/report errors). So does one
+stick or trigger that only goes on and off by itself, as a worn stick does at rest; one-sample glitches
+and readings that change on every sample for two minutes (misread controllers) are ignored too.
+Software-generated keyboard/mouse input counts as activity, because touchpads, remote control and
+accessibility tools use it. To ignore it, close the app and set <IgnoreSimulatedInput>true</IgnoreSimulatedInput>
+in %LOCALAPPDATA%\MonitorPausa\settings.xml; such input will then no longer keep or wake the screens.
+If the slideshow cannot run (folder missing, no readable image), the monitors are turned off instead and
+the reason is shown when you return. After an unexpected error, automation pauses and resumes by itself
+in a few minutes.
 Virtual devices that emulate physical input may be indistinguishable from real activity.
 After display-off, input returns to normal monitoring. Without input, an unexpected display wake causes
 another monitor-off request after at least three seconds. Missing acknowledgement or persistent conflicts
@@ -73,7 +81,7 @@ keys or cursor positions are written to files. User-selected network folders use
 Legacy MonitorPausa directory names are retained for upgrades and existing preferences.
 Program: %LOCALAPPDATA%\Programs\MonitorPausa
 Settings: %LOCALAPPDATA%\MonitorPausa\settings.xml
-Local events: %LOCALAPPDATA%\MonitorPausa\diagnostics.log (approximately 64 KB maximum)
+Local events: %LOCALAPPDATA%\MonitorPausa\diagnostics.log (approximately 64 KB maximum; the newest half is kept)
 Last error: %LOCALAPPDATA%\MonitorPausa\last-error.txt
 The event log uses timestamps and fixed codes, not file names, input details or window titles.
 Error messages may include local paths: review them before sharing. Nothing is uploaded automatically.
@@ -91,7 +99,7 @@ MIT. See LICENSE. The portable package and installer both include the license.
 
 --------------------------------------------------------------------------
 
-SCREEN CARE 1.5.7 — Windows 10/11, x64
+SCREEN CARE 1.5.8 — Windows 10/11, x64
 
 PORTUGUÊS (BRASIL)
 
@@ -126,13 +134,22 @@ Enquanto as configurações estão abertas na sessão desbloqueada, a ação aut
 ATIVIDADE E ENERGIA
 A contagem usa teclado, mouse, touchpad e controles de jogos, independentemente de vídeos, música ou uso de CPU.
 A aplicação não registra teclas, texto digitado ou posições do cursor em arquivos.
-Raw Input evita tratar mensagens comuns de automação como presença. Dispositivos virtuais/USB que
+Raw Input evita tratar mensagens de janela enviadas por automação como presença. Dispositivos virtuais/USB que
 simulam um mouse físico podem ser indistinguíveis de interação real.
+Entrada de teclado/mouse gerada por software conta como atividade, porque touchpads, acesso remoto e
+ferramentas de acessibilidade a utilizam. Para ignorá-la, feche o app e defina
+<IgnoreSimulatedInput>true</IgnoreSimulatedInput> em %LOCALAPPDATA%\MonitorPausa\settings.xml; essa entrada
+deixará de manter ou reacender as telas.
 DualSense e DualSense Edge são lidos diretamente por USB e Bluetooth; controles XInput (inclusive
 Steam Input) e joysticks compatíveis com WinMM também são consultados. Botões, direcionais,
 gatilhos e analógicos fora da zona de repouso contam como atividade, mesmo mantidos pressionados.
 Controle conectado e parado não impede o descanso. Pequenas oscilações dos analógicos são ignoradas.
 Comandos que permanecem exatamente iguais por 5 minutos deixam de contar (falhas de driver/relatório).
+O mesmo vale para um único analógico ou gatilho que apenas liga e desliga sozinho, como um analógico gasto
+em repouso; picos de uma só leitura e leituras que mudam a cada amostra por dois minutos também são ignorados.
+Se o slideshow não puder ser exibido (pasta indisponível, nenhuma imagem legível), os monitores são desligados
+e o motivo aparece quando você voltar. Após um erro inesperado, a automação é pausada e retomada sozinha
+em alguns minutos.
 Teclado, mouse ou atividade do controle encerram o slideshow e reiniciam a contagem. Esc também encerra a apresentação.
 Desligar monitores não desliga o computador: o Windows pede economia de energia às telas conectadas.
 Mudanças de conexão causadas pelo descanso das telas não reativam a solicitação de mantê-las acesas.
@@ -173,7 +190,7 @@ ARQUIVOS E DESINSTALAÇÃO
 O nome anterior, MonitorPausa, permanece nas pastas internas para preservar atualizações e preferências.
 Programa: %LOCALAPPDATA%\Programs\MonitorPausa
 Configurações: %LOCALAPPDATA%\MonitorPausa\settings.xml
-Eventos locais de execução, limitados a aproximadamente 64 KB: %LOCALAPPDATA%\MonitorPausa\diagnostics.log
+Eventos locais de execução, limitados a aproximadamente 64 KB (a metade mais recente é preservada): %LOCALAPPDATA%\MonitorPausa\diagnostics.log
 Último erro, se houver: %LOCALAPPDATA%\MonitorPausa\last-error.txt
 Desinstale em Configurações do Windows > Aplicativos > Screen Care, ou pelo menu Iniciar.
 A desinstalação remove programa, atalhos e inicialização automática, preservando configurações e fotos.

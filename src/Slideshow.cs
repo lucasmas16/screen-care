@@ -64,13 +64,19 @@ namespace ScreenCare
     {
         private readonly List<SlideWindow> windows = new List<SlideWindow>();
         private bool cursorHidden;
-        internal Blackout(Action exit)
+        internal Blackout(Action exit) : this(exit, null) { }
+        internal Blackout(Action exit, Rectangle[] areas)
         {
             try
             {
-                foreach (Screen screen in Screen.AllScreens)
+                if (areas == null)
                 {
-                    var window = new SlideWindow(screen.Bounds, true);
+                    Screen[] screens = Screen.AllScreens; areas = new Rectangle[screens.Length];
+                    for (int i = 0; i < screens.Length; i++) areas[i] = screens[i].Bounds;
+                }
+                foreach (Rectangle area in areas)
+                {
+                    var window = new SlideWindow(area, true);
                     window.ExitSlide += exit;
                     windows.Add(window);
                     window.Show();
@@ -80,6 +86,18 @@ namespace ScreenCare
             catch { Dispose(); throw; }
         }
         internal int Count { get { return windows.Count; } }
+        // True while every current screen has a cover window with the same bounds.
+        internal bool Covers(Screen[] screens)
+        {
+            if (screens.Length != windows.Count) return false;
+            foreach (Screen screen in screens)
+            {
+                bool found = false;
+                foreach (SlideWindow window in windows) found |= window.Bounds == screen.Bounds;
+                if (!found) return false;
+            }
+            return true;
+        }
         public void Dispose()
         {
             foreach (SlideWindow window in windows) { window.Close(); window.Dispose(); }

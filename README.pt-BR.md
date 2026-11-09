@@ -12,7 +12,11 @@ Projeto de código aberto para Windows, distribuído sob a licença MIT.
 
 Baixe o [instalador ou a versão portátil na página de releases](https://github.com/lucasmas16/screen-care/releases/latest). Os pacotes incluem a licença e o manual; a lista `SHA256SUMS.txt` permite conferir a integridade dos arquivos. O aplicativo ainda não possui assinatura digital de editor.
 
-## Novidades da versão 1.5.7
+## Novidades da versão 1.5.8
+
+Revisão do que ainda podia manter as telas acesas ou fechar o app. O auxiliar de controles não vaza mais handles: o Windows vaza cerca de 20 handles de registro a cada consulta de um slot de joystick vazio, e o auxiliar consultava a cada dois segundos (1,4 milhão de handles em dois dias). Os slots vazios agora são verificados só quando um dispositivo é conectado ou removido, o auxiliar se substitui se os handles acumularem e, se falhar repetidamente, é reiniciado com intervalos maiores. Analógicos gastos não bloqueiam mais o descanso: as zonas mortas têm histerese, picos de uma só leitura são ignorados, um único analógico ou gatilho que liga e desliga sozinho deixa de contar após 5 minutos e leituras que mudam a cada amostra por dois minutos são tratadas como controle mal interpretado. O slideshow que não pode ser exibido desliga os monitores em vez de deixar a tela acesa. A automação pausada por erro é retomada sozinha. A cobertura preta acompanha mudanças de monitores, o log de diagnóstico preserva a metade mais recente e a sessão já bloqueada ao iniciar é reconhecida. Consulte a [validação e os limites](docs/VALIDACAO-1.5.8.md).
+
+## Mudanças anteriores da versão 1.5.7
 
 Alguns drivers de controle fazem o Windows tratar um controle conectado e parado como presença do usuário. Com um DualSense por Bluetooth, o Windows reacendia as telas cerca de 20 ms após cada desligamento. Quando as telas reacendem durante o desligamento e o Screen Care não detectou teclado, mouse nem controle, todas as telas ficam cobertas de preto, sem roubar o foco, até haver entrada real; as tentativas de desligamento continuam. Em qualquer controle, comandos que permanecem exatamente iguais por 5 minutos deixam de contar como atividade. Na tela de bloqueio esse sinal do driver não se distingue de entrada real, então ela permanece acesa enquanto ele estiver ativo. Consulte a [validação e os limites](docs/VALIDACAO-1.5.7.md).
 

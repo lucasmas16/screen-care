@@ -55,12 +55,12 @@ namespace ScreenCare
         [STAThread]
         internal static int Main(string[] args)
         {
-            if (args.Length == 2 && args[0] == "--gamepad-worker") return GamepadProcess.RunWorker(args[1]);
+            if ((args.Length == 2 || (args.Length == 3 && args[2] == "--xinput-only")) && args[0] == "--gamepad-worker") return GamepadProcess.RunWorker(args[1], args.Length == 2);
             if (args.Length == 2 && args[0] == "--worker-fixture")
             {
                 Console.WriteLine("1"); Console.Out.Flush();
                 Thread.Sleep(args[1] == "hang" ? 30000 : 300);
-                return args[1] == "recycle" ? GamepadProcess.RecycleExitCode : 77;
+                return args[1] == "recycle" ? GamepadProcess.RecycleExitCode : args[1] == "heap" ? GamepadProcess.HeapCorruption : 77;
             }
             if (args.Length == 2 && args[0] == "--check-path")
             {
@@ -134,7 +134,7 @@ namespace ScreenCare
             L10n.Current = Language.Portuguese;
             try
             {
-                TestIdle(); TestPowerGuard(); TestGamepads(); TestSession(); TestPaint(); TestMouse(); TestSettings(root); TestSetupFiles(root); TestImages(root); TestWindows(root); TestStartupLayout(root); TestToasts(root); TestFullscreenToast(root); TestLocalization(root); TestLifetime(root);
+                TestIdle(); TestPowerGuard(); TestInputRecovery(); TestGamepads(); TestSession(); TestPaint(); TestMouse(); TestSettings(root); TestSetupFiles(root); TestImages(root); TestWindows(root); TestStartupLayout(root); TestToasts(root); TestFullscreenToast(root); TestLocalization(root); TestLifetime(root);
                 results.Add(passed + " checks passed.");
                 File.WriteAllLines(Path.Combine(root, "results.txt"), results);
                 Console.WriteLine(String.Join(Environment.NewLine, results));
@@ -181,13 +181,17 @@ namespace ScreenCare
             Check(!guard.TryRetry(14.99, true) && guard.TryRetry(15, true), "missing power acknowledgement retries after five seconds");
             Check(!guard.TryRetry(29.99, true) && guard.TryRetry(30, true), "second retry waits fifteen seconds");
             Check(!guard.TryRetry(59.99, true) && guard.TryRetry(60, true), "third retry waits thirty seconds");
-            Check(!guard.TryRetry(119.99, true) && guard.TryRetry(120, true), "persistent conflicts back off to sixty seconds");
+            Check(!guard.TryRetry(120, true) && guard.ShouldGiveUp(120), "only three retries are permitted even without power acknowledgements");
+            guard.Begin(120);
             guard.Observe(false, 121);
             Check(!guard.TryRetry(10000, true), "confirmed display-off stops all retries");
             guard.Observe(true, 10001); guard.Observe(true, 10002);
             Check(!guard.TryRetry(10003.99, true) && guard.TryRetry(10004, true), "unexpected wake retries after input grace period without duplicate-notification postponement");
+            Check(guard.Wakes == 1 && !guard.ShouldGiveUp(10120.99), "duplicate wake notifications do not inflate counts or shorten the safety deadline");
+            guard.Observe(false, 10005);
+            Check(guard.ShouldGiveUp(10121), "cover deadline releases the action even with a stale display-off state");
             guard.Reset();
-            Check(!guard.TryRetry(20000, true), "user input cancels queued retry");
+            Check(!guard.TryRetry(20000, true) && !guard.ShouldGiveUp(20000), "user input cancels queued retry and safety deadline");
             guard.Begin(0); guard.Observe(true, 1);
             Check(!guard.TryRetry(100, false), "settings, suspended, disconnected and secure sessions cannot retry");
             guard.Reset(); guard.Observe(true, 101);
@@ -203,6 +207,91 @@ namespace ScreenCare
             Check(!manual.TryTake(22) && manual.TryTake(23), "second shortcut invocation restarts countdown");
             manual.Schedule(30, false); manual.Cancel();
             Check(!manual.TryTake(32), "pausing or session change cancels manual countdown");
+        }
+        private static void TestInputRecovery()
+        {
+            var fallback = new CoverLastInput(); fallback.Begin(true, 100);
+            Check(!fallback.Observe(100) && !fallback.Observe(90) && fallback.Observe(101), "cover fallback accepts only input newer than cover creation");
+            fallback.Begin(true, UInt32.MaxValue - 2);
+            Check(fallback.Observe(2), "cover fallback survives Windows tick wrap");
+            fallback.Begin(false, 0);
+            Check(!fallback.Observe(20) && fallback.Observe(21), "unavailable last-input baseline is established without dismissing the cover");
+            var motion = new CoverMotion(new Point(-2000, -100));
+            Check(!motion.Moved(new Point(-1997, -103)) && motion.Moved(new Point(-1996, -100)), "cover mouse escape ignores jitter and supports negative coordinates");
+            Check(Marshal.SizeOf(typeof(GamepadMonitor.JoyState)) == 52 && Marshal.SizeOf(typeof(GamepadMonitor.JoyCaps)) == 728
+                && Marshal.SizeOf(typeof(GamepadMonitor.XboxState)) == 16, "native controller structures match Windows x64 layouts");
+            using (var input = new InputWindow())
+            {
+                Check(input.RawRegistrationValid(), "all four raw usages initially target the input window");
+                Native.RegisterRawInputDevices(new[] { new Native.RawDevice { Page = 1, Usage = 2, Flags = 1 } }, 1, (uint)Marshal.SizeOf(typeof(Native.RawDevice)));
+                Check(!input.RawRegistrationValid() && input.EnsureRawRegistration() && input.RawRegistrationValid(), "removed raw registration is detected and restored");
+                typeof(Control).GetMethod("RecreateHandle", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(input, null);
+                Check(input.RawRegistrationValid(), "handle recreation registers all usages on the new window");
+                Check(input.TakeInputSummary().Contains(" raw=0") && input.TakeInputSummary().Contains(" ignored=0"), "display diagnostics expose aggregate counters without retaining input contents");
+            }
+            using (var worker = new GamepadProcess())
+            {
+                worker.ObserveExit(77);
+                Check(!worker.LegacyDisabled && !worker.WorkerDisabled, "ordinary worker exits retain normal controller support");
+                worker.ObserveExit(GamepadProcess.HeapCorruption);
+                Check(worker.LegacyDisabled && !worker.WorkerDisabled, "native heap crash quarantines legacy polling while preserving XInput and raw controllers");
+                worker.ObserveExit(GamepadProcess.HeapCorruption);
+                Check(worker.WorkerDisabled && !worker.Poll(100), "heap crash in safe mode stops the worker instead of looping forever");
+            }
+            using (var target = new Form())
+            {
+                Check(target.Handle != IntPtr.Zero, "cover hook dispatcher has a message target"); int exits = 0;
+                using (var escape = new CoverEscape(target, delegate { exits++; }, true))
+                {
+                    Check(escape.Installed, "cover keyboard and mouse hooks are installed");
+                    IntPtr data = Marshal.AllocHGlobal(32);
+                    try
+                    {
+                        for (int i = 0; i < 32; i += 4) Marshal.WriteInt32(data, i, 0);
+                        var keyboard = typeof(CoverEscape).GetMethod("Keyboard", BindingFlags.Instance | BindingFlags.NonPublic);
+                        Marshal.WriteInt32(data, 8, 0x10);
+                        keyboard.Invoke(escape, new object[] { 0, new IntPtr(0x0100), data });
+                        Pump(20); Check(exits == 0, "cover keyboard hook honors the injected-input filter");
+                        Marshal.WriteInt32(data, 8, 0);
+                        keyboard.Invoke(escape, new object[] { 0, new IntPtr(0x0100), data });
+                        Check(exits == 0, "native hook defers cover cleanup to the UI queue");
+                        Pump(20); Check(exits == 1, "keyboard hook exits without Raw Input or keyboard focus");
+                    }
+                    finally { Marshal.FreeHGlobal(data); }
+                    escape.Dispose(); escape.Dispose();
+                    Check(!escape.Installed, "cover disposal removes both hooks idempotently");
+                }
+                exits = 0;
+                using (var escape = new CoverEscape(target, delegate { exits++; }, true))
+                {
+                    IntPtr data = Marshal.AllocHGlobal(32);
+                    try
+                    {
+                        for (int i = 0; i < 32; i += 4) Marshal.WriteInt32(data, i, 0);
+                        Point point = Cursor.Position; Marshal.WriteInt32(data, point.X + 8); Marshal.WriteInt32(data, 4, point.Y);
+                        var mouse = typeof(CoverEscape).GetMethod("Mouse", BindingFlags.Instance | BindingFlags.NonPublic);
+                        Marshal.WriteInt32(data, 12, 1);
+                        mouse.Invoke(escape, new object[] { 0, new IntPtr(0x0200), data });
+                        Pump(20); Check(exits == 0, "cover mouse hook honors the injected-input filter");
+                        Marshal.WriteInt32(data, 12, 0);
+                        mouse.Invoke(escape, new object[] { 0, new IntPtr(0x0200), data });
+                        Pump(20); Check(exits == 1, "mouse hook exits without Raw Input or a click");
+                    }
+                    finally { Marshal.FreeHGlobal(data); }
+                }
+            }
+            using (var window = new SlideWindow(new Rectangle(-30000, -30000, 10, 10), true))
+            {
+                int exits = 0; window.ExitSlide += delegate { exits++; };
+                Point start = Cursor.Position;
+                var move = typeof(SlideWindow).GetMethod("OnMouseMove", BindingFlags.Instance | BindingFlags.NonPublic);
+                Point jitter = window.PointToClient(new Point(start.X + 2, start.Y));
+                move.Invoke(window, new object[] { new MouseEventArgs(MouseButtons.None, 0, jitter.X, jitter.Y, 0) });
+                Check(exits == 0, "passive window ignores a small pointer shift");
+                Point moved = window.PointToClient(new Point(start.X + 8, start.Y));
+                move.Invoke(window, new object[] { new MouseEventArgs(MouseButtons.None, 0, moved.X, moved.Y, 0) });
+                Check(exits == 1, "passive window exits on mouse movement without Raw Input or hooks");
+            }
         }
         private static void TestGamepads()
         {
@@ -418,6 +507,14 @@ namespace ScreenCare
         private static void TestGamepadProcess()
         {
             var clock = Stopwatch.StartNew();
+            using (var worker = new GamepadProcess(delegate { return new ProcessStartInfo(Application.ExecutablePath, "--worker-fixture heap"); }))
+            {
+                worker.Poll(0); Thread.Sleep(700); worker.Poll(1);
+                Check(worker.LegacyDisabled && worker.ChildId == 0, "real child heap exit selects controller safe mode");
+                worker.Poll(10); Thread.Sleep(700); worker.Poll(11);
+                Check(worker.WorkerDisabled && worker.ChildId == 0 && !worker.Poll(1000), "second real child heap exit leaves no restart loop");
+            }
+            clock.Restart();
             using (var worker = new GamepadProcess(delegate { return new ProcessStartInfo(Application.ExecutablePath, "--worker-fixture exit"); }))
             {
                 bool sawActive = false;
@@ -501,7 +598,8 @@ namespace ScreenCare
         private static void TestCover()
         {
             var flags = BindingFlags.Instance | BindingFlags.NonPublic; var type = typeof(TrayApplication);
-            using (var app = new TrayApplication(new Settings { Enabled = false, Action = IdleAction.MonitorsOff, Language = Language.English }, false))
+            using (var app = new TrayApplication(new Settings { Enabled = false, Action = IdleAction.MonitorsOff, Language = Language.English }, false, false,
+                delegate { throw new IOException("synthetic settings save failure"); }))
             {
                 var input = (InputWindow)type.GetField("input", flags).GetValue(app);
                 input.AllowMonitorOff = delegate { return false; };
@@ -531,6 +629,38 @@ namespace ScreenCare
                 Check(cover() == null, "detected input removes the black cover");
                 displayChanged(true);
                 Check(cover() == null, "display-on after real input is not covered");
+                if (Native.InteractiveDesktop())
+                {
+                    input.SuppressRawInputForTest = true;
+                    manual.Schedule(-3, true); type.GetMethod("Tick", flags).Invoke(app, null);
+                    displayChanged(false); displayChanged(true);
+                    uint last; Native.TryLastInput(out last);
+                    ((CoverLastInput)type.GetField("coverInput", flags).GetValue(app)).Begin(true, unchecked(last - 1));
+                    type.GetMethod("Tick", flags).Invoke(app, null);
+                    Check(cover() == null && !((IdleController)type.GetField("idle", flags).GetValue(app)).Active, "last-input fallback dismisses a cover when Raw Input is suppressed");
+                    manual.Schedule(-3, true); type.GetMethod("Tick", flags).Invoke(app, null);
+                    displayChanged(false); displayChanged(true);
+                    var guard = (MonitorPowerGuard)type.GetField("powerGuard", flags).GetValue(app);
+                    guard.Begin(-200); guard.Observe(true, -199); guard.Observe(false, -198);
+                    type.GetMethod("Tick", flags).Invoke(app, null);
+                    Check(cover() == null && !guard.Armed && (bool)type.GetField("yieldedToWindows", flags).GetValue(app), "no-input deadline removes the cover and latches a pause");
+                    Check((uint)type.GetField("powerFlags", flags).GetValue(app) == 0x80000000u, "wake-loop give-up releases display and system stay-awake requests");
+                    var idle = (IdleController)type.GetField("idle", flags).GetValue(app);
+                    idle.Reset(-100000);
+                    ((Settings)type.GetField("settings", flags).GetValue(app)).Enabled = true;
+                    type.GetMethod("Tick", flags).Invoke(app, null);
+                    Check(!idle.Active && !guard.Armed, "automation cannot immediately restart after giving up");
+                    type.GetMethod("OnInput", flags).Invoke(app, null);
+                    Check(!(bool)type.GetField("yieldedToWindows", flags).GetValue(app), "new input rearms the normal idle interval after give-up");
+                    manual.Schedule(-3, true); type.GetMethod("Tick", flags).Invoke(app, null);
+                    displayChanged(false); displayChanged(true);
+                    // Cancellation must happen even if persistence fails.
+                    bool persistedEnabled = ((Settings)type.GetField("settings", flags).GetValue(app)).Enabled;
+                    var hotkey = Message.Create(input.Handle, Native.WM_HOTKEY, new IntPtr(InputWindow.ToggleHotKeyId), IntPtr.Zero);
+                    typeof(InputWindow).GetMethod("WndProc", flags).Invoke(input, new object[] { hotkey });
+                    Check(cover() == null && !guard.Armed && !idle.Active, "Ctrl+Alt+F12 removes the cover through the actual hotkey handler");
+                    Check(((Settings)type.GetField("settings", flags).GetValue(app)).Enabled == persistedEnabled, "failed settings save cannot prevent emergency cancellation");
+                }
                 Application.DoEvents();
             }
         }

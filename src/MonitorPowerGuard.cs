@@ -9,24 +9,36 @@ namespace ScreenCare
         internal bool Armed { get; private set; }
         internal bool? DisplayOn { get; private set; }
         internal int Retries { get; private set; }
+        internal int Wakes { get; private set; }
+        internal const int MaxRetries = 3;
+        internal const double WakeLimitSeconds = 120;
+        private double firstWake = Double.PositiveInfinity;
         private double nextAttempt = Double.PositiveInfinity, lastAttempt;
         private double Delay { get { return Retries == 0 ? 5 : Retries == 1 ? 15 : Retries == 2 ? 30 : 60; } }
         internal void Begin(double now)
-        { Armed = true; DisplayOn = null; Retries = 0; lastAttempt = now; nextAttempt = now + Delay; }
+        { Armed = true; DisplayOn = null; Retries = Wakes = 0; firstWake = Double.PositiveInfinity; lastAttempt = now; nextAttempt = now + Delay; }
         internal void Reset()
-        { Armed = false; DisplayOn = null; Retries = 0; nextAttempt = Double.PositiveInfinity; }
+        { Armed = false; DisplayOn = null; Retries = Wakes = 0; firstWake = nextAttempt = Double.PositiveInfinity; }
         internal void Observe(bool on, double now)
         {
             bool changed = DisplayOn != on; DisplayOn = on;
             if (!Armed) return;
+            if (on && changed) { Wakes++; if (Double.IsPositiveInfinity(firstWake)) firstWake = now; }
             if (!on) nextAttempt = Double.PositiveInfinity;
             else if (changed) nextAttempt = Math.Max(now + 3, lastAttempt + Delay);
         }
         internal bool TryRetry(double now, bool allowed)
         {
-            if (!Armed || !allowed || DisplayOn == false || now < nextAttempt) return false;
-            Retries = Math.Min(Retries + 1, 3); lastAttempt = now; nextAttempt = now + Delay;
+            if (!Armed || !allowed || Retries >= MaxRetries || DisplayOn == false || now < nextAttempt) return false;
+            Retries++; lastAttempt = now; nextAttempt = now + Delay;
             return true;
+        }
+        internal bool ShouldGiveUp(double now)
+        {
+            // The deadline also applies if a final display-off notification is
+            // stale: a cover must never survive indefinitely waiting for input.
+            return Armed && (now - firstWake >= WakeLimitSeconds
+                || (Retries >= MaxRetries && DisplayOn != false && now >= nextAttempt));
         }
     }
 

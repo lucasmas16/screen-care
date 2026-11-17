@@ -1,4 +1,4 @@
-SCREEN CARE 1.5.8 — Windows 10/11, x64
+SCREEN CARE 1.5.9 — Windows 10/11, x64
 
 ENGLISH — Portuguese instructions follow below.
 
@@ -52,9 +52,14 @@ in a few minutes.
 Virtual devices that emulate physical input may be indistinguishable from real activity.
 After display-off, input returns to normal monitoring. Without input, an unexpected display wake causes
 another monitor-off request after at least three seconds. Missing acknowledgement or persistent conflicts
-use delays of 5, 15, 30 and then 60 seconds. Confirmed display-off stops retrying; input cancels retries.
+allow at most three retries, with progressive delays. Confirmed display-off stops retrying; input cancels retries.
 If Windows turns the displays back on with no input detected (some controller drivers report a resting
-gamepad as user presence), all screens are covered in black, without taking focus, until real input.
+gamepad as user presence), all screens are covered in black, without taking focus. Keyboard and mouse
+escape paths work independently of Raw Input. After at most two minutes from an unexpected wake,
+or exhausted retries, the app releases the screens to Windows and waits for new activity or an explicit
+command. Ctrl+Alt+F12 removes the cover even if saving settings fails.
+After a native heap crash, the controller helper retries with XInput only; a second such crash stops
+the helper for that run. Legacy-only controllers may then no longer count as activity until restart.
 The cover is not possible on the lock screen: while such a driver is active, the lock screen stays on.
 Screen Care does not shut down the PC. It holds its own display/system stay-awake request during the
 configured wait and slideshow. Automatic monitor-off releases this request. Manual monitor-off
@@ -99,7 +104,7 @@ MIT. See LICENSE. The portable package and installer both include the license.
 
 --------------------------------------------------------------------------
 
-SCREEN CARE 1.5.8 — Windows 10/11, x64
+SCREEN CARE 1.5.9 — Windows 10/11, x64
 
 PORTUGUÊS (BRASIL)
 
@@ -154,10 +159,16 @@ Teclado, mouse ou atividade do controle encerram o slideshow e reiniciam a conta
 Desligar monitores não desliga o computador: o Windows pede economia de energia às telas conectadas.
 Mudanças de conexão causadas pelo descanso das telas não reativam a solicitação de mantê-las acesas.
 Se a tela reacender sem atividade, o app tenta desligá-la novamente. A confirmação de tela desligada
-interrompe as tentativas; sem confirmação, os intervalos crescem de 5 para 15, 30 e 60 segundos.
+interrompe as tentativas; sem confirmação, são permitidas no máximo três retentativas com intervalos progressivos.
 Após um reacendimento, há pelo menos 3 segundos para processar entrada pendente.
 Se o Windows reacender as telas sem nenhuma entrada detectada (alguns drivers tratam um controle parado
-como presença do usuário), todas as telas ficam cobertas de preto, sem roubar o foco, até haver entrada real.
+como presença do usuário), todas as telas ficam cobertas de preto, sem roubar o foco. Teclado e mouse
+podem sair da cortina por caminhos independentes do Raw Input. Em até dois minutos desde um
+reacendimento inesperado, ou após esgotar as retentativas, o app libera as telas ao Windows e aguarda
+nova atividade ou comando explícito. Ctrl+Alt+F12 tira a cortina mesmo se salvar as configurações falhar.
+Após corrupção de memória nativa, o auxiliar de controles tenta novamente usando só XInput; uma
+segunda falha desse tipo interrompe o auxiliar naquela execução. Controles apenas legados podem
+deixar de contar como atividade até reiniciar o app.
 Na tela de bloqueio a cobertura não é possível: com esse tipo de driver ativo, a tela de bloqueio fica acesa.
 Teclado, mouse, controle, pausa e mudanças de sessão cancelam as tentativas.
 O comportamento físico depende dos monitores, drivers e sessão; valide no seu equipamento.

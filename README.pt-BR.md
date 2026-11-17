@@ -12,7 +12,11 @@ Projeto de código aberto para Windows, distribuído sob a licença MIT.
 
 Baixe o [instalador ou a versão portátil na página de releases](https://github.com/lucasmas16/screen-care/releases/latest). Os pacotes incluem a licença e o manual; a lista `SHA256SUMS.txt` permite conferir a integridade dos arquivos. O aplicativo ainda não possui assinatura digital de editor.
 
-## Novidades da versão 1.5.8
+## Novidades da versão 1.5.9
+
+A cortina preta ganhou saídas independentes por teclado e mouse e um limite de dois minutos após um reacendimento inesperado. São permitidas no máximo três retentativas de desligamento. Se a recuperação falhar, o app retira a cortina, pede para ligar as telas e libera seus pedidos de energia ao Windows até nova atividade ou comando explícito. O registro de Raw Input é conferido e reparado, inclusive após recriação da janela. Uma falha nativa de corrupção de memória no auxiliar de controles desativa a consulta legada naquela execução; uma segunda falha interrompe o auxiliar, mantendo Raw Input disponível. Consulte a [validação e os limites](docs/VALIDACAO-1.5.9.md).
+
+## Mudanças anteriores da versão 1.5.8
 
 Revisão do que ainda podia manter as telas acesas ou fechar o app. O auxiliar de controles não vaza mais handles: o Windows vaza cerca de 20 handles de registro a cada consulta de um slot de joystick vazio, e o auxiliar consultava a cada dois segundos (1,4 milhão de handles em dois dias). Os slots vazios agora são verificados só quando um dispositivo é conectado ou removido, o auxiliar se substitui se os handles acumularem e, se falhar repetidamente, é reiniciado com intervalos maiores. Analógicos gastos não bloqueiam mais o descanso: as zonas mortas têm histerese, picos de uma só leitura são ignorados, um único analógico ou gatilho que liga e desliga sozinho deixa de contar após 5 minutos e leituras que mudam a cada amostra por dois minutos são tratadas como controle mal interpretado. O slideshow que não pode ser exibido desliga os monitores em vez de deixar a tela acesa. A automação pausada por erro é retomada sozinha. A cobertura preta acompanha mudanças de monitores, o log de diagnóstico preserva a metade mais recente e a sessão já bloqueada ao iniciar é reconhecida. Consulte a [validação e os limites](docs/VALIDACAO-1.5.8.md).
 

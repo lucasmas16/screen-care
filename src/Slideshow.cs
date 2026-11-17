@@ -12,9 +12,11 @@ namespace ScreenCare
     {
         internal Bitmap Slide;
         internal event Action ExitSlide;
+        internal bool PointerFallback = true;
         // Passive windows never take focus: keystrokes keep reaching the
         // application underneath, exactly as with monitors physically off.
         private readonly bool passive;
+        private readonly CoverMotion motion = new CoverMotion(Cursor.Position);
         internal SlideWindow(Rectangle bounds) : this(bounds, false) { }
         internal SlideWindow(Rectangle bounds, bool passiveCover)
         {
@@ -53,7 +55,9 @@ namespace ScreenCare
         }
         // Touch/pen are not registered as Raw Input; a tap on the cover is input.
         protected override void OnMouseDown(MouseEventArgs e)
-        { base.OnMouseDown(e); if (passive && ExitSlide != null) ExitSlide(); }
+        { base.OnMouseDown(e); if (passive && PointerFallback && ExitSlide != null) ExitSlide(); }
+        protected override void OnMouseMove(MouseEventArgs e)
+        { base.OnMouseMove(e); if (passive && PointerFallback && motion.Moved(PointToScreen(e.Location)) && ExitSlide != null) ExitSlide(); }
     }
 
     // Shown when Windows turns the displays back on although Screen Care saw no
@@ -64,8 +68,10 @@ namespace ScreenCare
     {
         private readonly List<SlideWindow> windows = new List<SlideWindow>();
         private bool cursorHidden;
-        internal Blackout(Action exit) : this(exit, null) { }
-        internal Blackout(Action exit, Rectangle[] areas)
+        private CoverEscape escape;
+        internal Blackout(Action exit) : this(delegate(string source) { exit(); }, false, null) { }
+        internal Blackout(Action exit, Rectangle[] areas) : this(delegate(string source) { exit(); }, false, areas) { }
+        internal Blackout(Action<string> exit, bool ignoreSimulated, Rectangle[] areas)
         {
             try
             {
@@ -77,10 +83,13 @@ namespace ScreenCare
                 foreach (Rectangle area in areas)
                 {
                     var window = new SlideWindow(area, true);
-                    window.ExitSlide += exit;
+                    window.PointerFallback = !ignoreSimulated;
+                    window.ExitSlide += delegate { exit("cover-pointer"); };
                     windows.Add(window);
                     window.Show();
                 }
+                if (windows.Count == 0) throw new InvalidOperationException("No display available for cover");
+                escape = new CoverEscape(windows[0], exit, ignoreSimulated);
                 Cursor.Hide(); cursorHidden = true;
             }
             catch { Dispose(); throw; }
@@ -100,6 +109,7 @@ namespace ScreenCare
         }
         public void Dispose()
         {
+            if (escape != null) { escape.Dispose(); escape = null; }
             foreach (SlideWindow window in windows) { window.Close(); window.Dispose(); }
             windows.Clear();
             if (cursorHidden) { Cursor.Show(); cursorHidden = false; }

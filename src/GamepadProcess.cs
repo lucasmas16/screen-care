@@ -14,6 +14,9 @@ namespace ScreenCare
         private readonly object gate = new object();
         private Process child;
         private bool active, disposed;
+        internal bool LegacyDisabled { get; private set; }
+        internal bool WorkerDisabled { get; private set; }
+        internal const int HeapCorruption = unchecked((int)0xC0000374);
         private long lastReport;
         private double retryAt, startedAt, lastPoll, graceUntil;
         private int failures;
@@ -29,14 +32,16 @@ namespace ScreenCare
         { return consecutive <= 1 ? RestartDelay : consecutive == 2 ? 30 : consecutive == 3 ? 120 : 600; }
         internal int ChildId { get { return child == null ? 0 : child.Id; } }
 
-        internal GamepadProcess() : this(delegate {
-            return new ProcessStartInfo(Application.ExecutablePath, "--gamepad-worker " + Process.GetCurrentProcess().Id);
-        }) { }
+        internal GamepadProcess()
+        {
+            startInfo = delegate { return new ProcessStartInfo(Application.ExecutablePath,
+                "--gamepad-worker " + Process.GetCurrentProcess().Id + (LegacyDisabled ? " --xinput-only" : "")); };
+        }
         internal GamepadProcess(Func<ProcessStartInfo> factory) { startInfo = factory; }
 
         internal bool Poll(double now)
         {
-            if (disposed) return false;
+            if (disposed || WorkerDisabled) return false;
             try
             {
                 // After a pause in polling (lock, sleep) old timestamps say nothing
@@ -53,11 +58,16 @@ namespace ScreenCare
                     else if (exited || (silence >= HangSeconds && now >= graceUntil))
                     {
                         failures = now - startedAt >= HealthySeconds ? 1 : failures + 1;
-                        Diagnostics.Event(exited ? "gamepad-worker-exited" : "gamepad-worker-unresponsive");
+                        if (exited)
+                        {
+                            Diagnostics.Event("gamepad-worker-exited code=" + unchecked((uint)child.ExitCode).ToString("X8"));
+                            ObserveExit(child.ExitCode);
+                        }
+                        else Diagnostics.Event("gamepad-worker-unresponsive");
                         StopChild(); retryAt = now + Backoff(failures);
                     }
                 }
-                if (child == null && now >= retryAt)
+                if (!WorkerDisabled && child == null && now >= retryAt)
                 {
                     var info = startInfo(); info.UseShellExecute = false; info.CreateNoWindow = true;
                     info.RedirectStandardOutput = true;
@@ -97,8 +107,18 @@ namespace ScreenCare
             finally { old.Dispose(); }
         }
         public void Dispose() { disposed = true; StopChild(); }
+        internal void ObserveExit(int exitCode)
+        {
+            if (exitCode != HeapCorruption) return;
+            // A driver heap failure cannot be recovered inside that process.
+            // Try XInput alone once; Raw Input in the tray remains independent.
+            if (!LegacyDisabled)
+            { LegacyDisabled = true; Diagnostics.Event("gamepad-legacy-disabled-heap-corruption"); }
+            else
+            { WorkerDisabled = true; Diagnostics.Event("gamepad-worker-disabled-heap-corruption"); }
+        }
 
-        internal static int RunWorker(string parentId)
+        internal static int RunWorker(string parentId, bool includeLegacy = true)
         {
             int id;
             if (!Int32.TryParse(parentId, out id) || id <= 0) return 2;
@@ -106,7 +126,7 @@ namespace ScreenCare
             {
                 using (var parent = Process.GetProcessById(id))
                 {
-                    var monitor = new GamepadMonitor(); var clock = Stopwatch.StartNew();
+                    var monitor = new GamepadMonitor(includeLegacy); var clock = Stopwatch.StartNew();
                     double handleCheck = 60;
                     while (!parent.HasExited)
                     {

@@ -42,6 +42,7 @@ namespace ScreenCare
         // and messages supplied by Windows are never passed through this table.
         internal static readonly Dictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal)
         {
+            { "As telas foram liberadas após falhas ao desligar. O desligamento automático aguarda nova atividade; o tempo de espera do Windows continua valendo.", "Displays were released after repeated power-off failures. Automatic power-off waits for new activity; the Windows display timeout still applies." },
             { "Idioma", "Language" },
             { "Desligar telas em 2 segundos", "Turn off displays in 2 seconds" },
             { "As telas serão desligadas em 2 segundos.", "Displays will turn off in 2 seconds." },

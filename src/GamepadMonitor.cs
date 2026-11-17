@@ -45,6 +45,9 @@ namespace ScreenCare
         [DllImport("kernel32.dll")] private static extern bool GetProcessHandleCount(IntPtr process, out uint count);
         internal const long XboxAnalog = 0x3FFL << 16, LegacyAnalog = 0xFFFL << 36;
         private readonly SlotProbe probe = new SlotProbe();
+        private readonly bool includeLegacy;
+        internal GamepadMonitor() : this(true) { }
+        internal GamepadMonitor(bool legacyEnabled) { includeLegacy = legacyEnabled; }
         private readonly double[] xboxRetry = new double[4];
         private readonly double[] joyRetry = new double[16];
         private readonly LegacyActivity[] legacy = new LegacyActivity[16];
@@ -91,6 +94,7 @@ namespace ScreenCare
                 }
                 else { xboxStuck[i] = null; xboxRetry[i] = now + 2; }
             }
+            if (!includeLegacy) return active;
             bool probeEmpty = probe.Allow(now, DeviceSignature);
             uint count = Math.Min(joyGetNumDevs(), 16);
             for (uint i = 0; i < count; i++)

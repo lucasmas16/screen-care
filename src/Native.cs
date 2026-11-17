@@ -13,6 +13,12 @@ namespace ScreenCare
         internal static readonly Guid DisplayState = new Guid("2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5");
         [StructLayout(LayoutKind.Sequential)] internal struct RawDevice { internal ushort Page, Usage; internal uint Flags; internal IntPtr Target; }
         [DllImport("user32.dll", SetLastError = true)] internal static extern bool RegisterRawInputDevices(RawDevice[] devices, uint count, uint size);
+        [DllImport("user32.dll", SetLastError = true)] internal static extern uint GetRegisteredRawInputDevices([Out] RawDevice[] devices, ref uint count, uint size);
+        internal delegate IntPtr HookProc(int code, IntPtr message, IntPtr data);
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)] internal static extern IntPtr SetWindowsHookEx(int kind, HookProc callback, IntPtr module, uint thread);
+        [DllImport("user32.dll")] internal static extern bool UnhookWindowsHookEx(IntPtr hook);
+        [DllImport("user32.dll")] internal static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr message, IntPtr data);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr GetModuleHandle(string name);
         [DllImport("user32.dll", SetLastError = true)] internal static extern uint GetRawInputData(IntPtr input, uint command, IntPtr data, ref uint size, uint headerSize);
         [DllImport("user32.dll", EntryPoint = "GetRawInputDeviceInfoW", SetLastError = true)] internal static extern uint GetRawInputDeviceInfo(IntPtr device, uint command, IntPtr data, ref uint size);
         [DllImport("user32.dll", SetLastError = true)] internal static extern IntPtr RegisterPowerSettingNotification(IntPtr hwnd, ref Guid setting, uint flags);
@@ -83,6 +89,7 @@ namespace ScreenCare
         // Opt-in: input with no device behind it (SendInput, automation, remote
         // control; also some touchpads) is then not treated as a person.
         internal bool IgnoreSimulatedInput;
+        internal bool SuppressRawInputForTest;
         internal const int MonitorOffMessage = 0x8000 + 20;
         internal static readonly uint ShowMessage = Native.RegisterWindowMessage("MonitorPausa.Show.1");
         internal static readonly uint ExitMessage = Native.RegisterWindowMessage("MonitorPausa.Exit.1");
@@ -117,6 +124,9 @@ namespace ScreenCare
         internal string SwitchReportFormat { get; private set; }
         private readonly uint headerSize = (uint)(8 + 2 * IntPtr.Size);
         private bool registered;
+        private bool sessionRegistered;
+        private long rawMessages, rawKeyboard, rawMouse, rawHid, rawAccepted;
+        private long previousMessages, previousKeyboard, previousMouse, previousHid, previousAccepted, previousSimulated;
         private bool haveAbsoluteMouse;
         private int absoluteX, absoluteY;
 
@@ -126,15 +136,74 @@ namespace ScreenCare
             ShowInTaskbar = false;
             FormBorderStyle = FormBorderStyle.None;
             rawBuffer = Marshal.AllocHGlobal(256);
-            IntPtr hwnd = Handle;
-            var devices = new[] {
+            try { CreateHandle(); }
+            catch { Dispose(); throw; }
+        }
+        private static Native.RawDevice[] Devices(IntPtr hwnd)
+        {
+            return new[] {
                 new Native.RawDevice { Page = 1, Usage = 2, Flags = 0x100, Target = hwnd },
                 new Native.RawDevice { Page = 1, Usage = 6, Flags = 0x100, Target = hwnd },
                 new Native.RawDevice { Page = 1, Usage = 4, Flags = 0x2100, Target = hwnd },
                 new Native.RawDevice { Page = 1, Usage = 5, Flags = 0x2100, Target = hwnd }
             };
-            if (!Native.RegisterRawInputDevices(devices, (uint)devices.Length, (uint)Marshal.SizeOf(typeof(Native.RawDevice))))
-            { int error = Marshal.GetLastWin32Error(); Dispose(); throw new Win32Exception(error, L10n.T("Não foi possível monitorar teclado e mouse.")); }
+        }
+        private bool RegisterInput()
+        {
+            var devices = Devices(Handle);
+            return Native.RegisterRawInputDevices(devices, (uint)devices.Length, (uint)Marshal.SizeOf(typeof(Native.RawDevice)));
+        }
+        private static Native.RawDevice[] RegisteredDevices()
+        {
+            uint count = 0, size = (uint)Marshal.SizeOf(typeof(Native.RawDevice));
+            uint query = Native.GetRegisteredRawInputDevices(null, ref count, size);
+            // A NULL size query normally reports ERROR_INSUFFICIENT_BUFFER.
+            if ((query == UInt32.MaxValue && Marshal.GetLastWin32Error() != 122) || count > 4096) return null;
+            if (count == 0) return new Native.RawDevice[0];
+            var devices = new Native.RawDevice[count];
+            uint read = Native.GetRegisteredRawInputDevices(devices, ref count, size);
+            if (read == UInt32.MaxValue) return null;
+            Array.Resize(ref devices, (int)read); return devices;
+        }
+        internal bool RawRegistrationValid()
+        {
+            if (!IsHandleCreated) return false;
+            var devices = RegisteredDevices();
+            if (devices == null) return false;
+            foreach (var expected in Devices(Handle))
+            {
+                bool found = false;
+                for (int i = 0; i < devices.Length; i++)
+                    found |= devices[i].Page == expected.Page && devices[i].Usage == expected.Usage
+                        // Windows may omit DEVNOTIFY in this query. Verify the
+                        // target and INPUTSINK, which govern delivery of WM_INPUT.
+                        && devices[i].Target == expected.Target && (devices[i].Flags & 0x100) != 0;
+                if (!found) return false;
+            }
+            return true;
+        }
+        internal bool EnsureRawRegistration()
+        {
+            if (RawRegistrationValid()) return true;
+            bool restored = IsHandleCreated && RegisterInput();
+            Diagnostics.Event(restored ? "rawinput-reregistered" : "rawinput-registration-failed");
+            return restored;
+        }
+        internal string TakeInputSummary()
+        {
+            string result = " raw=" + (rawMessages - previousMessages) + " keyboard=" + (rawKeyboard - previousKeyboard)
+                + " mouse=" + (rawMouse - previousMouse) + " hid=" + (rawHid - previousHid)
+                + " simulated=" + (SimulatedInputs - previousSimulated)
+                + " ignored=" + ((rawMessages - rawAccepted) - (previousMessages - previousAccepted));
+            previousMessages = rawMessages; previousKeyboard = rawKeyboard; previousMouse = rawMouse;
+            previousHid = rawHid; previousAccepted = rawAccepted; previousSimulated = SimulatedInputs;
+            return result;
+        }
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            IntPtr hwnd = Handle;
+            if (!RegisterInput()) throw new Win32Exception(Marshal.GetLastWin32Error(), L10n.T("Não foi possível monitorar teclado e mouse."));
             registered = true;
             // MOD_ALT | MOD_CONTROL | MOD_NOREPEAT, VK_F12. A collision must not prevent the tray app from starting.
             HotKeyRegistered = Native.RegisterHotKey(hwnd, ToggleHotKeyId, 0x0001 | 0x0002 | 0x4000, 0x7B);
@@ -143,8 +212,9 @@ namespace ScreenCare
             if (!MonitorOffHotKeyRegistered) MonitorOffHotKeyRegistrationError = Marshal.GetLastWin32Error();
             Guid guid = Native.DisplayState;
             powerNotification = Native.RegisterPowerSettingNotification(hwnd, ref guid, 0);
-            if (powerNotification == IntPtr.Zero || !Native.WTSRegisterSessionNotification(hwnd, 0))
-            { int error = Marshal.GetLastWin32Error(); Dispose(); throw new Win32Exception(error, L10n.T("Não foi possível acompanhar a sessão e os monitores.")); }
+            sessionRegistered = Native.WTSRegisterSessionNotification(hwnd, 0);
+            if (powerNotification == IntPtr.Zero || !sessionRegistered)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), L10n.T("Não foi possível acompanhar a sessão e os monitores."));
         }
 
         internal static bool MouseIsActivity(ushort flags, ushort buttons, int x, int y, ref bool haveAbsolute, ref int oldX, ref int oldY)
@@ -162,12 +232,15 @@ namespace ScreenCare
         }
         private void ReadInput(IntPtr handle)
         {
+            rawMessages++;
+            if (SuppressRawInputForTest) return;
             uint size = 0;
             if (Native.GetRawInputData(handle, 0x10000003, IntPtr.Zero, ref size, headerSize) == UInt32.MaxValue || size > 65536) return;
             if (size > rawCapacity) { rawBuffer = Marshal.ReAllocHGlobal(rawBuffer, new IntPtr(size)); rawCapacity = size; }
             uint read = Native.GetRawInputData(handle, 0x10000003, rawBuffer, ref size, headerSize);
             if (read == UInt32.MaxValue || read < headerSize + 8) return;
             int type = Marshal.ReadInt32(rawBuffer);
+            if (type == 0) rawMouse++; else if (type == 1) rawKeyboard++; else if (type == 2) rawHid++;
             bool simulated = type != 2 && Marshal.ReadIntPtr(rawBuffer, 8) == IntPtr.Zero;
             if (simulated) { SimulatedInputs++; if (IgnoreSimulatedInput) { IgnoredInputs++; return; } }
             string controllerSource = null;
@@ -217,6 +290,7 @@ namespace ScreenCare
                     Marshal.ReadInt32(rawBuffer, offset + 12), Marshal.ReadInt32(rawBuffer, offset + 16),
                     ref haveAbsoluteMouse, ref absoluteX, ref absoluteY);
             }
+            if (activity) rawAccepted++;
             if (activity && DirectInput != null)
             {
                 LastInputSource = simulated ? (type == 1 ? "keyboard-no-device" : "mouse-no-device")
@@ -262,17 +336,18 @@ namespace ScreenCare
             { if (MonitorOffRequested != null) MonitorOffRequested(); }
             else if ((uint)m.Msg == ShowMessage) { if (ShowRequested != null) ShowRequested(); }
             else if ((uint)m.Msg == ExitMessage) { if (ExitRequested != null) ExitRequested(); }
-            else if (m.Msg == 0x007E) { if (DisplayLayoutChanged != null) DisplayLayoutChanged(); }
+            else if (m.Msg == 0x007E) { EnsureRawRegistration(); if (DisplayLayoutChanged != null) DisplayLayoutChanged(); }
             else if (m.Msg == Native.WM_WTSSESSION_CHANGE)
             {
                 int state = m.WParam.ToInt32();
+                EnsureRawRegistration();
                 if (SessionChanged != null) SessionChanged(state);
             }
             else if (m.Msg == Native.WM_POWERBROADCAST)
             {
                 int kind = m.WParam.ToInt32();
                 if (kind == 4) { if (Suspended != null) Suspended(); }
-                else if (kind == 7 || kind == 18) { if (Resumed != null) Resumed(); }
+                else if (kind == 7 || kind == 18) { EnsureRawRegistration(); if (Resumed != null) Resumed(); }
                 else if (kind == 0x8013 && m.LParam != IntPtr.Zero)
                 {
                     Guid setting = (Guid)Marshal.PtrToStructure(m.LParam, typeof(Guid));
@@ -283,24 +358,29 @@ namespace ScreenCare
             // DefWindowProc performs SC_MONITORPOWER and mandatory WM_INPUT cleanup.
             base.WndProc(ref m);
         }
-        protected override void Dispose(bool disposing)
+        protected override void OnHandleDestroyed(EventArgs e)
         {
             if (HotKeyRegistered) { Native.UnregisterHotKey(Handle, ToggleHotKeyId); HotKeyRegistered = false; }
             if (MonitorOffHotKeyRegistered) { Native.UnregisterHotKey(Handle, MonitorOffHotKeyId); MonitorOffHotKeyRegistered = false; }
             if (registered)
             {
-                Native.RegisterRawInputDevices(new[] {
-                    new Native.RawDevice { Page = 1, Usage = 2, Flags = 1 },
-                    new Native.RawDevice { Page = 1, Usage = 6, Flags = 1 },
-                    new Native.RawDevice { Page = 1, Usage = 4, Flags = 1 },
-                    new Native.RawDevice { Page = 1, Usage = 5, Flags = 1 }
-                }, 4, (uint)Marshal.SizeOf(typeof(Native.RawDevice)));
-                Native.WTSUnRegisterSessionNotification(Handle);
+                var devices = RegisteredDevices();
+                if (devices != null)
+                    foreach (var device in devices)
+                        if (device.Target == Handle)
+                            Native.RegisterRawInputDevices(new[] { new Native.RawDevice { Page = device.Page, Usage = device.Usage, Flags = 1 } },
+                                1, (uint)Marshal.SizeOf(typeof(Native.RawDevice)));
                 registered = false;
             }
+            if (sessionRegistered) { Native.WTSUnRegisterSessionNotification(Handle); sessionRegistered = false; }
             if (powerNotification != IntPtr.Zero) { Native.UnregisterPowerSettingNotification(powerNotification); powerNotification = IntPtr.Zero; }
-            if (rawBuffer != IntPtr.Zero) { Marshal.FreeHGlobal(rawBuffer); rawBuffer = IntPtr.Zero; }
+            controllerDevices.Clear(); switchStates.Clear(); dualSenseStates.Clear(); haveAbsoluteMouse = false;
+            base.OnHandleDestroyed(e);
+        }
+        protected override void Dispose(bool disposing)
+        {
             base.Dispose(disposing);
+            if (rawBuffer != IntPtr.Zero) { Marshal.FreeHGlobal(rawBuffer); rawBuffer = IntPtr.Zero; }
         }
     }
 }

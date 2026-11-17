@@ -8,6 +8,7 @@ namespace ScreenCare
     internal sealed class TrayApplication : ApplicationContext
     {
         private Settings settings;
+        private readonly Action<Settings> persistSettings;
         private readonly InputWindow input;
         private readonly NotifyIcon tray;
         private readonly ToolStripMenuItem toggle;
@@ -27,7 +28,9 @@ namespace ScreenCare
         // The slideshow could not run: this idle period uses monitor-off instead.
         private bool fallbackOff;
         private string pendingNotice;
-        private double coverCheckAt = Double.PositiveInfinity, lastRetryLog = -1000, quietUntil;
+        private double coverCheckAt = Double.PositiveInfinity, rawCheckAt, loopSummaryAt;
+        private readonly CoverLastInput coverInput = new CoverLastInput();
+        private bool yieldedToWindows;
         private Timer resume;
         private bool pausedByError, resumeEnabled;
         private int recoveries;
@@ -37,12 +40,15 @@ namespace ScreenCare
         private IdleAction EffectiveAction { get { return session.EffectiveAction(forceMonitorsOff || fallbackOff ? IdleAction.MonitorsOff : settings.Action); } }
         private bool CanTurnOff { get { return !exiting && idle.Active && EffectiveAction == IdleAction.MonitorsOff && session.Allows(EffectiveAction, Native.InteractiveDesktop(), form != null); } }
 
-        internal TrayApplication(Settings value, bool showSettings)
+        internal TrayApplication(Settings value, bool showSettings, bool suppressRawInputForTest = false, Action<Settings> saveSettings = null)
         {
+            persistSettings = saveSettings ?? delegate(Settings next) { SettingsStore.Save(next, SettingsStore.DefaultPath); };
             settings = value; L10n.Current = settings.Language;
             idle = new IdleController(Now);
             input = new InputWindow();
             input.IgnoreSimulatedInput = settings.IgnoreSimulatedInput;
+            input.SuppressRawInputForTest = suppressRawInputForTest;
+            if (suppressRawInputForTest) Diagnostics.Event("test-rawinput-suppressed");
             if (Native.SessionLocked())
             {
                 // No lock notification arrives for a lock that predates this process.
@@ -52,7 +58,14 @@ namespace ScreenCare
             input.DirectInput += OnInput;
             input.AllowMonitorOff = delegate { return CanTurnOff; };
             input.DisplayChanged += delegate(bool on) {
-                if (powerGuard.DisplayOn != on && Now >= quietUntil) Diagnostics.Event(on ? "display-on" : "display-off");
+                if (on)
+                {
+                    uint time; bool valid = Native.TryLastInput(out time);
+                    Diagnostics.Event("display-on last-input-ms=" + (valid ? unchecked((uint)Environment.TickCount - time).ToString() : "unknown")
+                        + input.TakeInputSummary() + " registered=" + (input.RawRegistrationValid() ? "yes" : "no"));
+                    input.EnsureRawRegistration();
+                }
+                else Diagnostics.Event("display-off");
                 powerGuard.Observe(on, Now);
                 // Real input ends the action (and disarms the guard) before Windows
                 // reports the display on. Still armed means nothing we detect woke it.
@@ -101,6 +114,7 @@ namespace ScreenCare
         private void OnInputFrom(string source)
         {
             if (exiting) return;
+            yieldedToWindows = false;
             bool ended = idle.Input(Now);
             if (ended) { Diagnostics.Event("idle-ended-by-" + source); StopSlides(); }
             powerGuard.Reset(); forceMonitorsOff = fallbackOff = false;
@@ -114,6 +128,7 @@ namespace ScreenCare
         {
             if (form != null) form.Close();
             Reset(); manual.Schedule(Now, true);
+            yieldedToWindows = false;
             Notify(L10n.T("As telas serão desligadas em 2 segundos."));
         }
         private void Tick()
@@ -129,6 +144,11 @@ namespace ScreenCare
                 uint time;
                 if (Native.TryLastInput(out time) && session.ObserveInput(time)) OnInputFrom("locked-session-input");
             }
+            else if (blackout != null && !settings.IgnoreSimulatedInput)
+            {
+                uint time;
+                if (Native.TryLastInput(out time) && coverInput.Observe(time)) OnInputFrom("system-last-input");
+            }
             if (!session.Allows(settings.Action, Native.InteractiveDesktop(), false))
             {
                 // Never show images on the secure desktop; monitors-off is allowed when locked.
@@ -137,8 +157,15 @@ namespace ScreenCare
             UpdatePower();
             if (manual.TryTake(Now))
             { forceMonitorsOff = manual.MonitorsOnly; idle.Force(Now); Activate(); }
-            else if (!manual.Pending && idle.TryActivate(Now, settings.IdleSeconds, settings.Enabled, !session.Allows(settings.Action, true, form != null))) Activate();
-            if (powerGuard.TryRetry(Now, CanTurnOff)) RequestMonitorOff(true);
+            else if (!manual.Pending && idle.TryActivate(Now, settings.IdleSeconds, settings.Enabled, yieldedToWindows || !session.Allows(settings.Action, true, form != null))) Activate();
+            if (idle.Active && Now >= rawCheckAt) { rawCheckAt = Now + 60; input.EnsureRawRegistration(); }
+            if (powerGuard.ShouldGiveUp(Now)) GiveUpWakeLoop();
+            else if (powerGuard.TryRetry(Now, CanTurnOff)) RequestMonitorOff(true);
+            if (powerGuard.Armed && powerGuard.Wakes > 0 && Now >= loopSummaryAt)
+            {
+                loopSummaryAt = Now + 30;
+                Diagnostics.Event("wake-loop count=" + powerGuard.Wakes + " retries=" + powerGuard.Retries);
+            }
             if (blackout != null && Now >= coverCheckAt) { coverCheckAt = Double.PositiveInfinity; RefreshCover(); }
             if (slides != null) slides.Tick();
         }
@@ -167,30 +194,34 @@ namespace ScreenCare
         private void RequestMonitorOff(bool retry)
         {
             notifications.Hide();
-            // A display that keeps waking is retried every minute for as long as it
-            // lasts. Record the first retries and then one cycle every ten minutes,
-            // so start/exit history is not pushed out of the bounded log.
-            bool record = !retry || powerGuard.Retries < 3 || Now - lastRetryLog >= 600;
-            if (!record) quietUntil = Now + 5;
-            else
-            {
-                if (retry) { lastRetryLog = Now; Diagnostics.Event("monitor-off-retry"); }
-                Diagnostics.Event("monitor-off-request");
-            }
+            if (retry) Diagnostics.Event("monitor-off-retry count=" + powerGuard.Retries);
+            Diagnostics.Event("monitor-off-request");
             // Post to our own top-level window; DefWindowProc executes the standard system command.
             // Never broadcast synchronously to arbitrary (possibly hung) third-party windows.
             if (!Native.PostMessage(input.Handle, InputWindow.MonitorOffMessage, IntPtr.Zero, IntPtr.Zero))
                 ActionFailed(L10n.T("O Windows não aceitou o pedido para desligar os monitores."));
         }
+        private void GiveUpWakeLoop()
+        {
+            Diagnostics.Event("wake-loop-gave-up count=" + powerGuard.Wakes + " retries=" + powerGuard.Retries);
+            yieldedToWindows = true;
+            Reset(); UpdatePower();
+            // Release the cover and any physical power-off; queued off requests
+            // are rejected now that the guard and idle action have been reset.
+            Native.PostMessage(input.Handle, 0x0112, new IntPtr(0xF170), new IntPtr(-1));
+            Notify(L10n.T("As telas foram liberadas após falhas ao desligar. O desligamento automático aguarda nova atividade; o tempo de espera do Windows continua valendo."));
+        }
         private void CoverScreens()
         {
             if (exiting || blackout != null || slides != null || !CanTurnOff || !Native.InteractiveDesktop()) return;
             Diagnostics.Event("display-woke-without-input");
-            try { blackout = new Blackout(delegate { OnInputFrom("cover-pointer"); }); coverCheckAt = Now + 2; }
+            uint time; bool valid = Native.TryLastInput(out time); coverInput.Begin(valid, time);
+            try { blackout = new Blackout(OnInputFrom, settings.IgnoreSimulatedInput, null); coverCheckAt = Now + 2; }
             catch (Exception error)
             {
                 if (!Recovery.CanHandle(error)) throw;
                 Diagnostics.Event("cover-failed");
+                GiveUpWakeLoop();
             }
         }
         // Rebuild the cover when the monitor arrangement no longer matches it.
@@ -199,11 +230,12 @@ namespace ScreenCare
             if (blackout == null || blackout.Covers(Screen.AllScreens)) return;
             Diagnostics.Event("cover-relayout");
             var old = blackout; blackout = null; old.Dispose();
-            try { blackout = new Blackout(delegate { OnInputFrom("cover-pointer"); }); }
+            try { blackout = new Blackout(OnInputFrom, settings.IgnoreSimulatedInput, null); }
             catch (Exception error)
             {
                 if (!Recovery.CanHandle(error)) throw;
                 Diagnostics.Event("cover-failed");
+                GiveUpWakeLoop();
             }
         }
         // Ends every screen presentation: slideshow and the black cover.
@@ -225,13 +257,16 @@ namespace ScreenCare
             // Own the wait interval while enabled, and keep a visible slideshow on screen.
             // Automatic monitor-off restores the normal sleep policy. Explicit F11
             // keeps only the system awake until input/cancel, allowing background audio.
-            bool hold = !session.Suspended && !session.Disconnected
+            bool hold = !yieldedToWindows && !session.Suspended && !session.Disconnected
                 && (settings.Enabled || idle.Active) && !(idle.Active && EffectiveAction == IdleAction.MonitorsOff);
-            bool manualOff = !session.Suspended && !session.Disconnected && idle.Active && forceMonitorsOff;
+            bool manualOff = !yieldedToWindows && !session.Suspended && !session.Disconnected && idle.Active && forceMonitorsOff;
             SetPower(hold ? 0x80000003u : manualOff ? 0x80000001u : 0x80000000u);
         }
         private void Toggle(bool notifyStatus)
         {
+            // Emergency cancellation happens before disk/registry writes, which
+            // may fail. The hotkey must still remove a cover in that case.
+            Reset(); UpdatePower();
             Settings next = settings.Copy(); next.Enabled = !next.Enabled;
             try
             {
@@ -247,10 +282,11 @@ namespace ScreenCare
             bool startupChanged = settings.StartWithWindows != next.StartWithWindows;
             // Refresh an enabled startup entry if this executable moved after installation.
             if (startupChanged || next.StartWithWindows) Startup.Set(next.StartWithWindows, Application.ExecutablePath);
-            try { SettingsStore.Save(next, SettingsStore.DefaultPath); }
+            try { persistSettings(next); }
             catch { if (startupChanged) Startup.Set(settings.StartWithWindows, Application.ExecutablePath); throw; }
             pausedByError = false; if (resume != null) resume.Stop();
             pendingNotice = null;
+            yieldedToWindows = false;
             Reset(); settings = next; L10n.Current = settings.Language;
             input.IgnoreSimulatedInput = settings.IgnoreSimulatedInput;
             if (form != null) form.SetEnabled(settings.Enabled);

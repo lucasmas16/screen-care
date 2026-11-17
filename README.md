@@ -18,7 +18,11 @@ Get the [installer or portable version from Releases](https://github.com/lucasma
 
 Requires Windows 10/11 x64 and .NET Framework 4.8 or later. Executables do not yet have an Authenticode publisher signature.
 
-## What's new in 1.5.8
+## What's new in 1.5.9
+
+The black cover now has independent keyboard and mouse escape paths and a two-minute safety deadline after an unexpected wake. Power-off retries are capped at three. If recovery fails, the app removes the cover, requests display-on and releases its stay-awake requests to Windows until new activity or an explicit command. Raw Input registrations are checked and repaired, including after window recreation. A native heap crash in the controller helper disables legacy polling for that run; a second heap crash stops the helper while Raw Input remains available. See [validation and limits](docs/VALIDACAO-1.5.9.md).
+
+## Previous changes in 1.5.8
 
 A review of what could still keep screens on or close the app. The controller helper no longer leaks handles: Windows leaks about 20 registry handles each time an empty joystick slot is queried, and the helper asked every two seconds (1.4 million handles after two days). Empty slots are now checked only when a device is connected or removed, the helper replaces itself if handles accumulate, and a helper that keeps failing is restarted less often. Worn sticks no longer block the timeout: dead zones have hysteresis, one-sample glitches are ignored, a lone stick or trigger going on and off by itself stops counting after 5 minutes, and readings that change on every sample for two minutes are treated as a misread controller. A slideshow that cannot run turns the monitors off instead of leaving the screen on. Automation paused by an error resumes by itself. The black cover follows monitor changes, the diagnostic log keeps its newest half, and a session already locked at startup is recognised. See [validation and limits](docs/VALIDACAO-1.5.8.md).
 
@@ -51,7 +55,7 @@ Includes the fullscreen-alert and recovery improvements below. See [1.5.3 valida
 
 - **English and Portuguese:** choose the language in settings or the installer. It applies and saves immediately without discarding pending edits. On first use, Portuguese Windows locales select Portuguese; other locales select English.
 - **Ctrl+Alt+F11:** turn off displays after two seconds, even when slideshow mode is selected or automation is paused. The tray menu offers the same action. **Ctrl+Alt+F12** still toggles automation and cancels a pending manual countdown.
-- **Wake recovery:** monitor state notifications trigger a new power-off request when a display wakes without input. A three-second input grace period and retry delays of 5, 15, 30 and then 60 seconds avoid rapid command loops. Confirmed display-off stops retries.
+- **Wake recovery:** monitor state notifications trigger a new power-off request when a display wakes without input. A three-second input grace period and up to three retries avoid rapid command loops. A safety deadline ends unresolved wake cycles and gives display control back to Windows.
 - **Error handling:** recoverable UI errors pause automation while keeping the tray app available. Errors are logged before cleanup, and a small local event log records starts, shutdowns and monitor state changes.
 - The exact cause of a reported disappearing tray icon has not been confirmed. See the [investigation, validation and limits](docs/VALIDACAO-1.5.1.md).
 
